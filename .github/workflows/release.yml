@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-# SHA pins below: review and update via pinact before merging.
-# goreleaser-action SHA in particular: please refresh to current v6.x SHA.
-
 jobs:
   release:
     runs-on: ubuntu-latest
