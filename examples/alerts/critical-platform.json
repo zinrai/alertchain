@@ -1,0 +1,12 @@
+{
+  "labels": {
+    "alertname": "DBLag",
+    "severity": "critical",
+    "team": "platform",
+    "instance": "db-1"
+  },
+  "annotations": {
+    "summary": "DB replication lag"
+  },
+  "startsAt": "2026-05-27T03:01:00Z"
+}

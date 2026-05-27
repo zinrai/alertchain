@@ -1,0 +1,8 @@
+{
+  "labels": {
+    "alertname": "FlappyService",
+    "source": "noisy-system",
+    "severity": "warning"
+  },
+  "startsAt": "2026-05-27T03:03:00Z"
+}

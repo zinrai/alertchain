@@ -1,0 +1,12 @@
+{
+  "labels": {
+    "alertname": "DiskFilling",
+    "severity": "warning",
+    "team": "infra",
+    "instance": "node-2"
+  },
+  "annotations": {
+    "summary": "Disk at 80 percent"
+  },
+  "startsAt": "2026-05-27T03:02:00Z"
+}

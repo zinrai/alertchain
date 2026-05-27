@@ -1,0 +1,49 @@
+verify:
+  - name: critical infra alert fans out to pager and mirror
+    labels:
+      severity: critical
+      team: infra
+    expect:
+      rules: [critical-to-infra, critical-mirror]
+      receivers: [infra-critical-pager, oncall-mirror]
+    description: |
+      critical-to-infra has continue:true, so critical-mirror also fires.
+
+  - name: critical platform alert reaches mirror only
+    labels:
+      severity: critical
+      team: platform
+    expect:
+      rules: [critical-mirror]
+      receivers: [oncall-mirror]
+
+  - name: infra warning reaches chat
+    labels:
+      severity: warning
+      team: infra
+    expect:
+      rules: [infra-warnings]
+      receivers: [infra-warning-chat]
+
+  - name: chaos label routes to failing-webhook
+    labels:
+      chaos: fail
+      alertname: ChaosTest
+    expect:
+      rules: [chaos-fail]
+      receivers: [failing-webhook]
+
+  - name: noisy source explicitly discarded
+    labels:
+      source: noisy-system
+      severity: warning
+    expect:
+      rules: [noisy-suppress]
+      receivers: [discard]
+
+  - name: unmatched alert falls through to catch-all discard
+    labels:
+      alertname: SomethingUnknown
+    expect:
+      rules: [catch-all-discard]
+      receivers: [discard]

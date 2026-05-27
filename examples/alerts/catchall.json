@@ -1,0 +1,7 @@
+{
+  "labels": {
+    "alertname": "SomethingNew",
+    "severity": "info"
+  },
+  "startsAt": "2026-05-27T03:04:00Z"
+}

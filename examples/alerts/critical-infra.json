@@ -1,0 +1,12 @@
+{
+  "labels": {
+    "alertname": "HighCPU",
+    "severity": "critical",
+    "team": "infra",
+    "instance": "node-1"
+  },
+  "annotations": {
+    "summary": "CPU high on node-1"
+  },
+  "startsAt": "2026-05-27T03:00:00Z"
+}

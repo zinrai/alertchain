@@ -1,0 +1,8 @@
+{
+  "labels": {
+    "alertname": "ChaosTest",
+    "chaos": "fail",
+    "instance": "node-x"
+  },
+  "startsAt": "2026-05-27T03:40:00Z"
+}

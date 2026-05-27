@@ -1,0 +1,52 @@
+receivers:
+  - name: infra-critical-pager
+    type: webhook
+    url: http://127.0.0.1:8000
+
+  - name: oncall-mirror
+    type: webhook
+    url: http://127.0.0.1:8000
+
+  - name: infra-warning-chat
+    type: webhook
+    url: http://127.0.0.1:8000
+
+  # Intentionally points to a closed port so alerts routed here exercise
+  # the webhook-failure path (firing-failed in `notifications`, retried
+  # implicitly on the next push from the sender).
+  - name: failing-webhook
+    type: webhook
+    url: http://127.0.0.1:9999
+
+rules:
+  - name: critical-to-infra
+    match:
+      severity: critical
+      team: infra
+    receiver: infra-critical-pager
+    continue: true
+
+  - name: critical-mirror
+    match:
+      severity: critical
+    receiver: oncall-mirror
+
+  - name: infra-warnings
+    match:
+      team: infra
+      severity: warning
+    receiver: infra-warning-chat
+
+  - name: chaos-fail
+    match:
+      chaos: fail
+    receiver: failing-webhook
+
+  - name: noisy-suppress
+    match:
+      source: noisy-system
+    receiver: discard
+
+  - name: catch-all-discard
+    match: {}
+    receiver: discard
