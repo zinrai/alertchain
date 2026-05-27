@@ -25,9 +25,10 @@ applied. The schema is managed out-of-band; see
 
 ```
 DATABASE_URL=postgres://user:pass@host/db alertchain serve --config alertchain.yaml --listen :9093
-alertchain trace  --config alertchain.yaml --alert-file alert.json
-alertchain check  --config alertchain.yaml
-alertchain verify --config alertchain.yaml --verify-cases routing.yaml
+alertchain trace   --config alertchain.yaml --alert-file alert.json
+alertchain check   --config alertchain.yaml
+alertchain verify  --config alertchain.yaml --verify-cases routing.yaml
+alertchain version
 ```
 
 `serve` is the daemon. `trace`, `check`, and `verify` are pure
