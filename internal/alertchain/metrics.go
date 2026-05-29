@@ -3,7 +3,7 @@
 // The increment methods are nil-receiver safe so Chain can use them
 // unconditionally even when Metrics is unset (e.g. in tests that
 // construct a Chain directly).
-package main
+package alertchain
 
 import (
 	"fmt"
@@ -28,37 +28,37 @@ func NewMetrics() *Metrics {
 	return &Metrics{}
 }
 
-func (m *Metrics) incAlertsReceived() {
+func (m *Metrics) IncAlertsReceived() {
 	if m != nil {
 		m.AlertsReceived.Add(1)
 	}
 }
 
-func (m *Metrics) incNotifySuccess() {
+func (m *Metrics) IncNotifySuccess() {
 	if m != nil {
 		m.NotifySuccess.Add(1)
 	}
 }
 
-func (m *Metrics) incNotifyFailure() {
+func (m *Metrics) IncNotifyFailure() {
 	if m != nil {
 		m.NotifyFailure.Add(1)
 	}
 }
 
-func (m *Metrics) incMuteLookupFailure() {
+func (m *Metrics) IncMuteLookupFailure() {
 	if m != nil {
 		m.MuteLookupFailure.Add(1)
 	}
 }
 
-func (m *Metrics) incHistoryLookupFailure() {
+func (m *Metrics) IncHistoryLookupFailure() {
 	if m != nil {
 		m.HistoryLookupFailure.Add(1)
 	}
 }
 
-func (m *Metrics) incHistoryWriteFailure() {
+func (m *Metrics) IncHistoryWriteFailure() {
 	if m != nil {
 		m.HistoryWriteFailure.Add(1)
 	}

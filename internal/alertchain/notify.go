@@ -9,7 +9,7 @@
 // applies a context.WithTimeout. The only timeout configured here is
 // the lower-level dial timeout, which protects against a hung TCP
 // connect that the context could not interrupt by itself.
-package main
+package alertchain
 
 import (
 	"bytes"

@@ -1,9 +1,9 @@
-// ui_handlers.go implements the /ui/* HTTP handlers.
+// handlers.go implements the /ui/* HTTP handlers.
 //
-// The UI calls the same lifecycle functions (CreateMute, ListMutes,
-// GetMute) as the HTTP API, so validation and status computation are
-// identical between the two surfaces.
-package main
+// The UI calls the same lifecycle functions (alertchain.CreateMute,
+// ListMutes, GetMute) as the HTTP API, so validation and status
+// computation are identical between the two surfaces.
+package ui
 
 import (
 	"errors"
@@ -13,15 +13,18 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/zinrai/alertchain/internal/alertchain"
 )
 
-// dtLayout is the format produced and consumed by <input
+// DTLayout is the format produced and consumed by <input
 // type="datetime-local">. The value is interpreted as UTC (the JS in
-// time-sync.js renders UTC components into the field).
-const dtLayout = "2006-01-02T15:04"
+// time-sync.js renders UTC components into the field). Exported so
+// tests in other packages can construct form values.
+const DTLayout = "2006-01-02T15:04"
 
 type uiHandler struct {
-	store      MuteStore
+	store      alertchain.MuteStore
 	logger     *slog.Logger
 	userHeader string
 	listTmpl   *template.Template
@@ -31,7 +34,7 @@ type uiHandler struct {
 
 // list renders GET /ui/.
 func (h *uiHandler) list(w http.ResponseWriter, r *http.Request) {
-	views, err := ListMutes(r.Context(), h.store)
+	views, err := alertchain.ListMutes(r.Context(), h.store)
 	if err != nil {
 		http.Error(w, "list: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -49,9 +52,9 @@ func (h *uiHandler) newForm(w http.ResponseWriter, r *http.Request) {
 		Matchers:  matchers,
 		Comment:   comment,
 		CreatedBy: createdBy,
-		StartsAt:  time.Now().UTC().Format(dtLayout),
+		StartsAt:  time.Now().UTC().Format(DTLayout),
 		Duration:  "1h",
-		EndsAt:    time.Now().UTC().Add(time.Hour).Format(dtLayout),
+		EndsAt:    time.Now().UTC().Add(time.Hour).Format(DTLayout),
 	})
 }
 
@@ -72,10 +75,10 @@ func (h *uiHandler) create(w http.ResponseWriter, r *http.Request) {
 		createdBy = h.userFromHeader(r)
 	}
 
-	starts, _ := time.Parse(dtLayout, startsAtStr)
-	ends, _ := time.Parse(dtLayout, endsAtStr)
+	starts, _ := time.Parse(DTLayout, startsAtStr)
+	ends, _ := time.Parse(DTLayout, endsAtStr)
 
-	_, err := CreateMute(r.Context(), h.store, CreateMuteRequest{
+	_, err := alertchain.CreateMute(r.Context(), h.store, alertchain.CreateMuteRequest{
 		Matchers:  matchers,
 		StartsAt:  starts,
 		EndsAt:    ends,
@@ -83,7 +86,7 @@ func (h *uiHandler) create(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: createdBy,
 	})
 	if err != nil {
-		var ve *ValidationError
+		var ve *alertchain.ValidationError
 		if errors.As(err, &ve) {
 			h.renderNew(w, newFormData{
 				Matchers:  matchers,
@@ -105,7 +108,7 @@ func (h *uiHandler) create(w http.ResponseWriter, r *http.Request) {
 // detail renders GET /ui/{id}.
 func (h *uiHandler) detail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	view, err := GetMute(r.Context(), h.store, id)
+	view, err := alertchain.GetMute(r.Context(), h.store, id)
 	if err != nil {
 		http.NotFound(w, r)
 		return

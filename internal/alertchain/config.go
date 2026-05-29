@@ -1,5 +1,5 @@
 // config.go parses the alertchain YAML file into a *Chain.
-package main
+package alertchain
 
 import (
 	"fmt"

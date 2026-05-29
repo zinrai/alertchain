@@ -1,5 +1,5 @@
 // chain.go defines the core types and the rule evaluation loop.
-package main
+package alertchain
 
 import (
 	"context"
@@ -20,10 +20,10 @@ const BuiltinDiscardReceiver = "discard"
 // (the two timeouts have different cancellation semantics).
 const notifyTimeout = 10 * time.Second
 
-// matchAll reports whether every (name, want) entry in conditions
+// MatchAll reports whether every (name, want) entry in conditions
 // equals the corresponding entry in labels. An empty conditions map
 // matches anything (catch-all).
-func matchAll(conditions, labels map[string]string) bool {
+func MatchAll(conditions, labels map[string]string) bool {
 	for name, want := range conditions {
 		if labels[name] != want {
 			return false
@@ -95,7 +95,7 @@ type Chain struct {
 func (c *Chain) Evaluate(alert *Alert) []Decision {
 	var decisions []Decision
 	for _, r := range c.Rules {
-		if !matchAll(r.Match, alert.Labels) {
+		if !MatchAll(r.Match, alert.Labels) {
 			continue
 		}
 		decisions = append(decisions, Decision{Rule: r, Alert: alert})
@@ -116,7 +116,7 @@ func (c *Chain) Evaluate(alert *Alert) []Decision {
 func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 	muted, err := c.Mutes.Matches(ctx, alert)
 	if err != nil {
-		c.Metrics.incMuteLookupFailure()
+		c.Metrics.IncMuteLookupFailure()
 		return fmt.Errorf("mute check: %w", err)
 	}
 	if muted {
@@ -148,7 +148,7 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 
 		prevStatus, ok, err := c.History.LastAttempt(ctx, d.Rule.Name, fp)
 		if err != nil {
-			c.Metrics.incHistoryLookupFailure()
+			c.Metrics.IncHistoryLookupFailure()
 			return fmt.Errorf("history lookup (rule=%s): %w", d.Rule.Name, err)
 		}
 		if ok && prevStatus == desired {
@@ -165,10 +165,10 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 		if notifyErr != nil {
 			c.Logger.Error("notification failed",
 				"rule", d.Rule.Name, "receiver", recv.Name, "err", notifyErr)
-			c.Metrics.incNotifyFailure()
+			c.Metrics.IncNotifyFailure()
 			status = desired.Failed()
 		} else {
-			c.Metrics.incNotifySuccess()
+			c.Metrics.IncNotifySuccess()
 		}
 
 		// RecordAttempt failure does not propagate: the webhook
@@ -177,7 +177,7 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 		if err := c.History.RecordAttempt(ctx, d.Rule.Name, fp, now, status); err != nil {
 			c.Logger.Error("history write failed",
 				"rule", d.Rule.Name, "err", err)
-			c.Metrics.incHistoryWriteFailure()
+			c.Metrics.IncHistoryWriteFailure()
 		}
 	}
 	return nil

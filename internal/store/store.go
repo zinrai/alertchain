@@ -1,7 +1,7 @@
 // store.go is the PostgreSQL implementation of MuteStore and
 // NotificationHistory. DML only; schema is managed by migrations/
 // applied out-of-band before startup.
-package main
+package store
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/zinrai/alertchain/internal/alertchain"
 )
 
 // Store wraps a *sql.DB and implements both MuteStore and
@@ -50,6 +52,13 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// TruncateForTesting empties the mutes and notifications tables. It
+// exists solely for test setup; production code must not call it.
+func (s *Store) TruncateForTesting(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `TRUNCATE TABLE mutes, notifications`)
+	return err
+}
+
 // checkSchema verifies the required tables are present. The check is
 // intentionally narrow: it does not validate column types or indexes
 // (the migration tool owns those).
@@ -69,7 +78,7 @@ func (s *Store) checkSchema(ctx context.Context) error {
 
 // Matches implements MuteStore. Linear scan over the active set;
 // typically only a handful of mutes are active at once.
-func (s *Store) Matches(ctx context.Context, alert *Alert) (bool, error) {
+func (s *Store) Matches(ctx context.Context, alert *alertchain.Alert) (bool, error) {
 	now := time.Now().UTC()
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT matchers FROM mutes WHERE starts_at <= $1 AND ends_at >= $1`,
@@ -88,7 +97,7 @@ func (s *Store) Matches(ctx context.Context, alert *Alert) (bool, error) {
 		if err := json.Unmarshal(raw, &matchers); err != nil {
 			return false, fmt.Errorf("decode mute matchers: %w", err)
 		}
-		if matchAll(matchers, alert.Labels) {
+		if alertchain.MatchAll(matchers, alert.Labels) {
 			return true, nil
 		}
 	}
@@ -99,7 +108,7 @@ func (s *Store) Matches(ctx context.Context, alert *Alert) (bool, error) {
 }
 
 // List implements MuteStore.
-func (s *Store) List(ctx context.Context) ([]*Mute, error) {
+func (s *Store) List(ctx context.Context) ([]*alertchain.Mute, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, matchers, starts_at, ends_at, comment, created_by
 		 FROM mutes ORDER BY ends_at DESC`)
@@ -108,7 +117,7 @@ func (s *Store) List(ctx context.Context) ([]*Mute, error) {
 	}
 	defer rows.Close()
 
-	var result []*Mute
+	var result []*alertchain.Mute
 	for rows.Next() {
 		m, err := scanMute(rows)
 		if err != nil {
@@ -120,7 +129,7 @@ func (s *Store) List(ctx context.Context) ([]*Mute, error) {
 }
 
 // Get implements MuteStore. Returns an error when not found.
-func (s *Store) Get(ctx context.Context, id string) (*Mute, error) {
+func (s *Store) Get(ctx context.Context, id string) (*alertchain.Mute, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, matchers, starts_at, ends_at, comment, created_by
 		 FROM mutes WHERE id = $1`, id)
@@ -132,7 +141,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Mute, error) {
 }
 
 // Create implements MuteStore.
-func (s *Store) Create(ctx context.Context, m *Mute) error {
+func (s *Store) Create(ctx context.Context, m *alertchain.Mute) error {
 	matchersJSON, err := json.Marshal(m.Matchers)
 	if err != nil {
 		return fmt.Errorf("encode matchers: %w", err)
@@ -173,7 +182,7 @@ func (s *Store) Expire(ctx context.Context, id string) error {
 }
 
 // LastAttempt implements NotificationHistory.
-func (s *Store) LastAttempt(ctx context.Context, ruleName, fingerprint string) (NotificationStatus, bool, error) {
+func (s *Store) LastAttempt(ctx context.Context, ruleName, fingerprint string) (alertchain.NotificationStatus, bool, error) {
 	var status string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT status FROM notifications WHERE rule_name = $1 AND fingerprint = $2`,
@@ -184,11 +193,11 @@ func (s *Store) LastAttempt(ctx context.Context, ruleName, fingerprint string) (
 	if err != nil {
 		return "", false, fmt.Errorf("query last_attempt: %w", err)
 	}
-	return NotificationStatus(status), true, nil
+	return alertchain.NotificationStatus(status), true, nil
 }
 
 // RecordAttempt implements NotificationHistory.
-func (s *Store) RecordAttempt(ctx context.Context, ruleName, fingerprint string, at time.Time, status NotificationStatus) error {
+func (s *Store) RecordAttempt(ctx context.Context, ruleName, fingerprint string, at time.Time, status alertchain.NotificationStatus) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO notifications (rule_name, fingerprint, sent_at, status)
 		 VALUES ($1, $2, $3, $4)
@@ -206,7 +215,7 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanMute(r rowScanner) (*Mute, error) {
+func scanMute(r rowScanner) (*alertchain.Mute, error) {
 	var (
 		id                 string
 		matchersJSON       []byte
@@ -220,7 +229,7 @@ func scanMute(r rowScanner) (*Mute, error) {
 	if err := json.Unmarshal(matchersJSON, &matchers); err != nil {
 		return nil, fmt.Errorf("decode matchers: %w", err)
 	}
-	return &Mute{
+	return &alertchain.Mute{
 		ID:        id,
 		Matchers:  matchers,
 		StartsAt:  startsAt,

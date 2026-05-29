@@ -6,7 +6,7 @@
 // - a rule references the built-in "discard" receiver as a catch-all
 //
 // Errors cause a non-zero exit. Warnings are advisory.
-package main
+package alertchain
 
 import (
 	"fmt"

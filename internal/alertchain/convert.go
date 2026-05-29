@@ -1,6 +1,6 @@
 // convert.go translates Alertmanager v2 PostableAlerts into the
 // alertchain internal Alert type. One-directional.
-package main
+package alertchain
 
 import (
 	"time"
@@ -8,10 +8,10 @@ import (
 	ammodels "github.com/prometheus/alertmanager/api/v2/models"
 )
 
-// alertFromPostable converts an Alertmanager v2 PostableAlert (as
+// AlertFromPostable converts an Alertmanager v2 PostableAlert (as
 // received from Prometheus or vmalert) into the alertchain internal
 // Alert representation.
-func alertFromPostable(p *ammodels.PostableAlert) *Alert {
+func AlertFromPostable(p *ammodels.PostableAlert) *Alert {
 	a := &Alert{
 		Labels:       map[string]string(p.Labels),
 		Annotations:  map[string]string(p.Annotations),

@@ -1,6 +1,6 @@
 // mute.go defines the Mute type and the MuteStore / NotificationHistory
 // interfaces.
-package main
+package alertchain
 
 import (
 	"context"
@@ -31,7 +31,7 @@ func (m *Mute) Active(now time.Time) bool {
 // labels on the alert (logical AND). An empty Matchers map matches
 // any alert; in practice mute creation rejects an empty map.
 func (m *Mute) MatchesAlert(alert *Alert) bool {
-	return matchAll(m.Matchers, alert.Labels)
+	return MatchAll(m.Matchers, alert.Labels)
 }
 
 // NewMuteID returns a random 16-byte hex ID. crypto/rand.Read is

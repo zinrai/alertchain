@@ -6,7 +6,7 @@
 //	POST   /api/v1/mutes         create
 //	GET    /api/v1/mutes/{id}    get one
 //	DELETE /api/v1/mutes/{id}    expire immediately
-package main
+package api
 
 import (
 	"encoding/json"
@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/zinrai/alertchain/internal/alertchain"
 )
 
 // muteIn is the JSON shape accepted by POST /api/v1/mutes. Matchers
@@ -30,11 +32,11 @@ type muteIn struct {
 }
 
 type mutesHandler struct {
-	store  MuteStore
+	store  alertchain.MuteStore
 	logger *slog.Logger
 }
 
-func newMutesHandler(store MuteStore, logger *slog.Logger) *mutesHandler {
+func newMutesHandler(store alertchain.MuteStore, logger *slog.Logger) *mutesHandler {
 	return &mutesHandler{store: store, logger: logger}
 }
 
@@ -66,13 +68,13 @@ func (h *mutesHandler) getOrExpire(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mutesHandler) list(w http.ResponseWriter, r *http.Request) {
-	views, err := ListMutes(r.Context(), h.store)
+	views, err := alertchain.ListMutes(r.Context(), h.store)
 	if err != nil {
 		http.Error(w, "list: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if views == nil {
-		views = []MuteView{}
+		views = []alertchain.MuteView{}
 	}
 	writeJSON(w, http.StatusOK, views)
 }
@@ -88,7 +90,7 @@ func (h *mutesHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "parse: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	view, err := CreateMute(r.Context(), h.store, CreateMuteRequest{
+	view, err := alertchain.CreateMute(r.Context(), h.store, alertchain.CreateMuteRequest{
 		Matchers:  in.Matchers,
 		StartsAt:  in.StartsAt,
 		EndsAt:    in.EndsAt,
@@ -96,7 +98,7 @@ func (h *mutesHandler) create(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: in.CreatedBy,
 	})
 	if err != nil {
-		var ve *ValidationError
+		var ve *alertchain.ValidationError
 		if errors.As(err, &ve) {
 			http.Error(w, ve.Error(), http.StatusBadRequest)
 			return
@@ -108,7 +110,7 @@ func (h *mutesHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mutesHandler) get(w http.ResponseWriter, r *http.Request, id string) {
-	view, err := GetMute(r.Context(), h.store, id)
+	view, err := alertchain.GetMute(r.Context(), h.store, id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return

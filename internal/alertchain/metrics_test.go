@@ -1,4 +1,4 @@
-package main
+package alertchain
 
 import (
 	"testing"
@@ -10,10 +10,10 @@ import (
 func TestMetricsNilReceiverSafe(t *testing.T) {
 	var m *Metrics
 	// These must not panic.
-	m.incAlertsReceived()
-	m.incNotifySuccess()
-	m.incNotifyFailure()
-	m.incMuteLookupFailure()
-	m.incHistoryLookupFailure()
-	m.incHistoryWriteFailure()
+	m.IncAlertsReceived()
+	m.IncNotifySuccess()
+	m.IncNotifyFailure()
+	m.IncMuteLookupFailure()
+	m.IncHistoryLookupFailure()
+	m.IncHistoryWriteFailure()
 }

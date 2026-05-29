@@ -1,4 +1,4 @@
-package main
+package alertchain
 
 import (
 	"testing"
