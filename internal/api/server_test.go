@@ -15,12 +15,8 @@ package api
 // serialization guarantees.
 //
 // Setup: set DATABASE_URL to a PostgreSQL instance with migrations
-// already applied. Tests skip when DATABASE_URL is unset.
-//
-// Run with `go test -p 1 ./...` so this package and internal/ui do
-// not race for the same DB. Within a package, Go's test runner is
-// sequential by default; the conflict is only across packages that
-// truncate the same tables.
+// already applied. Tests skip when DATABASE_URL is unset. Suite-level
+// DB lifecycle (advisory lock + TRUNCATE) is in main_test.go.
 
 import (
 	"bytes"
@@ -88,9 +84,6 @@ func newServerHarness(t *testing.T, receivers map[string]*alertchain.Receiver, r
 	db, err := store.OpenStore(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)
-	}
-	if err := db.TruncateForTesting(context.Background()); err != nil {
-		t.Fatalf("truncate: %v", err)
 	}
 
 	// Ensure the built-in discard receiver is present, the way

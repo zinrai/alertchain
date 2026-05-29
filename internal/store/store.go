@@ -52,13 +52,6 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// TruncateForTesting empties the mutes and notifications tables. It
-// exists solely for test setup; production code must not call it.
-func (s *Store) TruncateForTesting(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `TRUNCATE TABLE mutes, notifications`)
-	return err
-}
-
 // checkSchema verifies the required tables are present. The check is
 // intentionally narrow: it does not validate column types or indexes
 // (the migration tool owns those).
