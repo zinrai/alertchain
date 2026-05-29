@@ -97,6 +97,16 @@ Configuration changes require a process restart. There is no
 hot-reload. Because state is persisted in PostgreSQL, rolling
 restarts are non-disruptive.
 
+The optional `ui:` block configures the bundled web UI (enabled by
+default):
+
+```yaml
+ui:
+  enabled: true             # default; set false to omit /ui/ routes
+  user_header: X-Auth-User  # default; request header used to
+                            # prefill "Created by" in the UI form
+```
+
 ### Rules
 
 Each rule has these fields:
@@ -335,11 +345,57 @@ should measure it at the reverse proxy in front of alertchain.
 
 ### Authentication
 
-All HTTP endpoints are unauthenticated, matching the equivalent
-Alertmanager endpoints. Put a reverse proxy (nginx, Caddy, an
-authenticating sidecar, etc.) in front of alertchain for access
-control. This is the same expectation Alertmanager places on its
-operators.
+All HTTP endpoints — including the bundled UI at `/ui/` — are
+unauthenticated, matching the equivalent Alertmanager endpoints.
+Put a reverse proxy (nginx, Caddy, an authenticating sidecar, etc.)
+in front of alertchain for access control. This is the same
+expectation Alertmanager places on its operators.
+
+## Web UI
+
+alertchain ships a small built-in web UI for administering mutes,
+served at `/ui/` by the same process. The UI is server-side rendered
+HTML augmented with htmx; the release artefact is still a single Go
+executable.
+
+| Path          | Purpose                                        |
+|---------------|------------------------------------------------|
+| `GET /`       | Redirects to `/ui/` when the UI is enabled.    |
+| `GET /ui/`    | List of mutes (active, pending, expired).      |
+| `GET /ui/new` | New-mute form. Query parameters `match.<name>=<value>` and `comment=` prefill the form. |
+| `POST /ui/`   | Form submission; on success, 303 to `/ui/`.    |
+| `GET /ui/{id}`| Detail view of one mute.                       |
+| `POST /ui/{id}/expire` | Expire one mute.                      |
+| `GET /ui/static/...`   | Embedded static assets (htmx, CSS, JS).|
+
+The UI calls the same lifecycle functions as `POST /api/v1/mutes`,
+so validation, status computation, and audit fields stay identical
+between the two surfaces.
+
+### Disabling the UI
+
+```yaml
+ui:
+  enabled: false
+```
+
+When disabled, `/ui/` and `/ui/static/` are not registered and `GET
+/` returns a short text listing of the remaining endpoints. The
+HTTP API at `/api/v1/mutes` is unaffected.
+
+### `X-Auth-User` and the "Created by" field
+
+The UI form's `created_by` field is required. The configured header
+(default `X-Auth-User`) is consulted as a *hint* to prefill the
+field from upstream-set identity. This is **not** authentication —
+the UI trusts whatever the reverse proxy sets, and the HTTP API
+ignores this header entirely. If the form value is non-empty it
+wins over the header; if both are empty after `strings.TrimSpace`
+the submission is rejected with a per-field error.
+
+To use a different header name (e.g. `X-Forwarded-User`,
+`X-Auth-Request-User`), set `ui.user_header` in the config. To
+disable header lookup entirely, set `ui.user_header: ""`.
 
 ## Database
 

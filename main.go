@@ -110,10 +110,11 @@ func cmdServe(args []string) error {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	chain, err := LoadConfig(config)
+	cfg, err := LoadConfig(config)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	chain := cfg.Chain
 	store, err := openStoreWithTimeout(dsn)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
@@ -128,7 +129,7 @@ func cmdServe(args []string) error {
 	chain.Logger = logger
 	chain.Metrics = metrics
 
-	mux := newServeMux(chain, store, metrics, logger)
+	mux := newServeMux(chain, store, metrics, logger, cfg.UI)
 
 	srv := &http.Server{
 		Addr:              listen,
@@ -174,7 +175,7 @@ func cmdTrace(args []string) error {
 	if alertFile == "" {
 		return fmt.Errorf("--alert-file is required")
 	}
-	chain, err := LoadConfig(config)
+	cfg, err := LoadConfig(config)
 	if err != nil {
 		return err
 	}
@@ -182,7 +183,7 @@ func cmdTrace(args []string) error {
 	if err != nil {
 		return err
 	}
-	return Trace(context.Background(), chain, nil, alert, os.Stdout)
+	return Trace(context.Background(), cfg.Chain, nil, alert, os.Stdout)
 }
 
 func cmdCheck(args []string) error {
@@ -190,11 +191,11 @@ func cmdCheck(args []string) error {
 	if err != nil {
 		return err
 	}
-	chain, err := LoadConfig(config)
+	cfg, err := LoadConfig(config)
 	if err != nil {
 		return err
 	}
-	return Check(chain, os.Stdout)
+	return Check(cfg.Chain, os.Stdout)
 }
 
 // cmdVerify runs a YAML table of routing expectations against the
@@ -214,7 +215,7 @@ func cmdVerify(args []string) error {
 	if cases == "" {
 		return fmt.Errorf("--verify-cases is required")
 	}
-	chain, err := LoadConfig(config)
+	cfg, err := LoadConfig(config)
 	if err != nil {
 		return err
 	}
@@ -222,7 +223,7 @@ func cmdVerify(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !Verify(chain, cs, os.Stdout) {
+	if !Verify(cfg.Chain, cs, os.Stdout) {
 		return fmt.Errorf("one or more verify cases failed")
 	}
 	return nil

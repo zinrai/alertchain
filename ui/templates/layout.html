@@ -1,0 +1,18 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{block "title" .}}alertchain{{end}}</title>
+<link rel="stylesheet" href="/ui/static/style.css">
+<script src="/ui/static/htmx.min.js"></script>
+</head>
+<body>
+<header>
+  <h1><a href="/ui/">alertchain mutes</a></h1>
+</header>
+<main>
+{{block "content" .}}{{end}}
+</main>
+</body>
+</html>
+{{end}}

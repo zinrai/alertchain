@@ -36,10 +36,11 @@ rules:
     match: {}
     receiver: discard
 `)
-	chain, err := LoadConfig(path)
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+	chain := cfg.Chain
 	if len(chain.Rules) != 2 {
 		t.Fatalf("expected 2 rules, got %d", len(chain.Rules))
 	}
@@ -75,10 +76,11 @@ rules:
   - name: catch
     receiver: discard
 `)
-	chain, err := LoadConfig(path)
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+	chain := cfg.Chain
 	if len(chain.Rules[0].Match) != 0 {
 		t.Errorf("omitting match should be equivalent to catch-all, got %v", chain.Rules[0].Match)
 	}
@@ -159,10 +161,11 @@ rules:
       source: noisy
     receiver: discard
 `)
-	chain, err := LoadConfig(path)
+	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+	chain := cfg.Chain
 	r := chain.Receivers["discard"]
 	if r == nil || r.Type != "discard" {
 		t.Errorf("built-in discard receiver should be present, got %+v", r)
@@ -206,11 +209,80 @@ rules:
 `), 0o600); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}
-	chain, err := LoadConfig(cfgPath)
+	cfg, err := LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if got := chain.Receivers["w"].URL; got != "http://example.com/from-file" {
+	if got := cfg.Chain.Receivers["w"].URL; got != "http://example.com/from-file" {
 		t.Errorf("url from file: got %q", got)
+	}
+}
+
+func TestLoadConfigUIDefaults(t *testing.T) {
+	path := writeTempYAML(t, `
+receivers:
+  - name: w
+    type: webhook
+    url: http://x
+
+rules:
+  - name: catch
+    receiver: discard
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.UI.Enabled {
+		t.Errorf("UI.Enabled default: got false, want true")
+	}
+	if cfg.UI.UserHeader != "X-Auth-User" {
+		t.Errorf("UI.UserHeader default: got %q, want %q", cfg.UI.UserHeader, "X-Auth-User")
+	}
+}
+
+func TestLoadConfigUIDisabled(t *testing.T) {
+	path := writeTempYAML(t, `
+receivers:
+  - name: w
+    type: webhook
+    url: http://x
+
+rules:
+  - name: catch
+    receiver: discard
+
+ui:
+  enabled: false
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.UI.Enabled {
+		t.Errorf("UI.Enabled: got true, want false")
+	}
+}
+
+func TestLoadConfigUICustomUserHeader(t *testing.T) {
+	path := writeTempYAML(t, `
+receivers:
+  - name: w
+    type: webhook
+    url: http://x
+
+rules:
+  - name: catch
+    receiver: discard
+
+ui:
+  user_header: X-Forwarded-User
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.UI.UserHeader != "X-Forwarded-User" {
+		t.Errorf("UI.UserHeader: got %q, want %q", cfg.UI.UserHeader, "X-Forwarded-User")
 	}
 }

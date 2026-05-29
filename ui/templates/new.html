@@ -1,0 +1,64 @@
+{{define "title"}}New mute — alertchain{{end}}
+{{define "content"}}
+<h2>New mute</h2>
+
+<form method="POST" action="/ui/" class="mute-form">
+
+  <section class="form-section">
+    <h3>Time (UTC)</h3>
+    <div class="time-row">
+      <label>Start
+        <input type="datetime-local" name="starts_at" id="starts-at" value="{{.StartsAt}}" required>
+      </label>
+      <label>Duration
+        <input type="text" name="duration" id="duration" value="{{.Duration}}" placeholder="1h" pattern="(\d+[smhd])+">
+      </label>
+      <label>End
+        <input type="datetime-local" name="ends_at" id="ends-at" value="{{.EndsAt}}" required>
+      </label>
+    </div>
+    {{with index .Error "starts_at"}}<p class="error">{{.}}</p>{{end}}
+    {{with index .Error "ends_at"}}<p class="error">{{.}}</p>{{end}}
+  </section>
+
+  <section class="form-section">
+    <h3>Matchers</h3>
+    <p class="hint">All entries must match the alert's labels (logical AND).</p>
+    <div id="matchers">
+      {{range $k, $v := .Matchers}}
+      <div class="matcher-row">
+        <input type="text" name="match-name" value="{{$k}}" placeholder="label">
+        <input type="text" name="match-value" value="{{$v}}" placeholder="value">
+        <button type="button" class="remove-row">×</button>
+      </div>
+      {{end}}
+      <div class="matcher-row">
+        <input type="text" name="match-name" placeholder="label">
+        <input type="text" name="match-value" placeholder="value">
+        <button type="button" class="remove-row">×</button>
+      </div>
+    </div>
+    <button type="button" id="add-matcher-row">Add row</button>
+    {{with index .Error "matchers"}}<p class="error">{{.}}</p>{{end}}
+  </section>
+
+  <section class="form-section">
+    <h3>Comment</h3>
+    <textarea name="comment" maxlength="4096" required rows="3">{{.Comment}}</textarea>
+    {{with index .Error "comment"}}<p class="error">{{.}}</p>{{end}}
+  </section>
+
+  <section class="form-section">
+    <h3>Created by</h3>
+    <input type="text" name="created_by" maxlength="256" value="{{.CreatedBy}}" required>
+    {{with index .Error "created_by"}}<p class="error">{{.}}</p>{{end}}
+  </section>
+
+  <div class="form-actions">
+    <button type="submit" class="button button-primary">Create mute</button>
+    <a href="/ui/" class="button">Cancel</a>
+  </div>
+</form>
+
+<script src="/ui/static/time-sync.js"></script>
+{{end}}

@@ -107,7 +107,7 @@ func newServerHarness(t *testing.T, receivers map[string]*Receiver, rules []*Rul
 		Metrics:   metrics,
 	}
 
-	srv := httptest.NewServer(newServeMux(chain, store, metrics, logger))
+	srv := httptest.NewServer(newServeMux(chain, store, metrics, logger, UIConfig{Enabled: false}))
 
 	h := &serverHarness{
 		t:     t,

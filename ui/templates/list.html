@@ -1,0 +1,50 @@
+{{define "title"}}Mutes — alertchain{{end}}
+{{define "content"}}
+<div class="toolbar">
+  <a href="/ui/new" class="button button-primary">New mute</a>
+</div>
+
+{{if .Mutes}}
+<table class="mute-list">
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Matchers</th>
+  <th>Window (UTC)</th>
+  <th>Comment</th>
+  <th>By</th>
+  <th></th>
+</tr>
+</thead>
+<tbody>
+{{range .Mutes}}
+<tr id="mute-{{.ID}}" class="status-{{.Status}}">
+  <td><span class="badge badge-{{.Status}}">{{.Status}}</span></td>
+  <td class="matchers">
+    {{range $k, $v := .Matchers}}<span class="matcher">{{$k}}={{$v}}</span> {{end}}
+  </td>
+  <td class="times">
+    {{.StartsAt.UTC.Format "2006-01-02 15:04"}}<br>
+    → {{.EndsAt.UTC.Format "2006-01-02 15:04"}}
+  </td>
+  <td class="comment">{{.Comment}}</td>
+  <td class="created-by">{{.CreatedBy}}</td>
+  <td class="actions">
+    <a href="/ui/{{.ID}}">View</a>
+    <a href="/ui/new?{{range $k, $v := .Matchers}}match.{{$k}}={{$v}}&amp;{{end}}comment={{.Comment}}">Recreate</a>
+    {{if ne .Status "expired"}}
+    <button type="button"
+            hx-post="/ui/{{.ID}}/expire"
+            hx-target="#mute-{{.ID}}"
+            hx-swap="outerHTML"
+            hx-confirm="Expire this mute?">Expire</button>
+    {{end}}
+  </td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p class="empty">No mutes yet. <a href="/ui/new">Create one</a>.</p>
+{{end}}
+{{end}}
