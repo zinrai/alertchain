@@ -74,3 +74,116 @@ type NotificationHistory interface {
 	// parameter must be one of the four NotificationStatus constants.
 	RecordAttempt(ctx context.Context, ruleName, fingerprint string, at time.Time, status NotificationStatus) error
 }
+
+// MuteView is a Mute projected with its computed status (pending /
+// active / expired against time.Now()).
+type MuteView struct {
+	ID        string            `json:"id"`
+	Matchers  map[string]string `json:"matchers"`
+	StartsAt  time.Time         `json:"starts_at"`
+	EndsAt    time.Time         `json:"ends_at"`
+	Comment   string            `json:"comment,omitempty"`
+	CreatedBy string            `json:"created_by,omitempty"`
+	Status    string            `json:"status"` // "pending" | "active" | "expired"
+}
+
+// CreateMuteRequest is the input to CreateMute, independent of wire
+// format (JSON, form-encoded, ...).
+type CreateMuteRequest struct {
+	Matchers  map[string]string
+	StartsAt  time.Time
+	EndsAt    time.Time
+	Comment   string
+	CreatedBy string
+}
+
+// ValidationError carries Field for per-field UI rendering; Message
+// is surfaced verbatim by the HTTP API.
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string { return e.Message }
+
+// CreateMute validates a request, persists a new mute through store,
+// and returns its projected view.
+func CreateMute(ctx context.Context, store MuteStore, req CreateMuteRequest) (MuteView, error) {
+	if err := validateMuteCreate(req); err != nil {
+		return MuteView{}, err
+	}
+	m := &Mute{
+		ID:        NewMuteID(),
+		Matchers:  req.Matchers,
+		StartsAt:  req.StartsAt.UTC(),
+		EndsAt:    req.EndsAt.UTC(),
+		Comment:   req.Comment,
+		CreatedBy: req.CreatedBy,
+	}
+	if err := store.Create(ctx, m); err != nil {
+		return MuteView{}, err
+	}
+	return projectMuteView(m, time.Now().UTC()), nil
+}
+
+// ListMutes returns all stored mutes projected against a single
+// "now" snapshot, so the status field is consistent across the slice.
+func ListMutes(ctx context.Context, store MuteStore) ([]MuteView, error) {
+	mutes, err := store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	out := make([]MuteView, 0, len(mutes))
+	for _, m := range mutes {
+		out = append(out, projectMuteView(m, now))
+	}
+	return out, nil
+}
+
+// GetMute returns one mute by id, projected with status.
+func GetMute(ctx context.Context, store MuteStore, id string) (MuteView, error) {
+	m, err := store.Get(ctx, id)
+	if err != nil {
+		return MuteView{}, err
+	}
+	return projectMuteView(m, time.Now().UTC()), nil
+}
+
+func validateMuteCreate(req CreateMuteRequest) error {
+	if len(req.Matchers) == 0 {
+		return &ValidationError{Field: "matchers", Message: "matchers must be non-empty"}
+	}
+	if req.StartsAt.IsZero() || req.EndsAt.IsZero() {
+		field := "starts_at"
+		if !req.StartsAt.IsZero() {
+			field = "ends_at"
+		}
+		return &ValidationError{Field: field, Message: "starts_at and ends_at are required"}
+	}
+	if !req.EndsAt.After(req.StartsAt) {
+		return &ValidationError{Field: "ends_at", Message: "ends_at must be after starts_at"}
+	}
+	return nil
+}
+
+func projectMuteView(m *Mute, now time.Time) MuteView {
+	var status string
+	switch {
+	case now.Before(m.StartsAt):
+		status = "pending"
+	case now.After(m.EndsAt):
+		status = "expired"
+	default:
+		status = "active"
+	}
+	return MuteView{
+		ID:        m.ID,
+		Matchers:  m.Matchers,
+		StartsAt:  m.StartsAt,
+		EndsAt:    m.EndsAt,
+		Comment:   m.Comment,
+		CreatedBy: m.CreatedBy,
+		Status:    status,
+	}
+}

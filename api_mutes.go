@@ -10,6 +10,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -26,18 +27,6 @@ type muteIn struct {
 	EndsAt    time.Time         `json:"ends_at"`
 	Comment   string            `json:"comment,omitempty"`
 	CreatedBy string            `json:"created_by,omitempty"`
-}
-
-// muteOut is the JSON shape returned by GET endpoints. Status is
-// computed server-side from the current time.
-type muteOut struct {
-	ID        string            `json:"id"`
-	Matchers  map[string]string `json:"matchers"`
-	StartsAt  time.Time         `json:"starts_at"`
-	EndsAt    time.Time         `json:"ends_at"`
-	Comment   string            `json:"comment,omitempty"`
-	CreatedBy string            `json:"created_by,omitempty"`
-	Status    string            `json:"status"` // "pending" | "active" | "expired"
 }
 
 type mutesHandler struct {
@@ -77,17 +66,15 @@ func (h *mutesHandler) getOrExpire(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mutesHandler) list(w http.ResponseWriter, r *http.Request) {
-	mutes, err := h.store.List(r.Context())
+	views, err := ListMutes(r.Context(), h.store)
 	if err != nil {
 		http.Error(w, "list: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	now := time.Now().UTC()
-	out := make([]muteOut, 0, len(mutes))
-	for _, m := range mutes {
-		out = append(out, muteToOut(m, now))
+	if views == nil {
+		views = []MuteView{}
 	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (h *mutesHandler) create(w http.ResponseWriter, r *http.Request) {
@@ -101,41 +88,32 @@ func (h *mutesHandler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "parse: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if len(in.Matchers) == 0 {
-		http.Error(w, "matchers must be non-empty", http.StatusBadRequest)
-		return
-	}
-	if in.StartsAt.IsZero() || in.EndsAt.IsZero() {
-		http.Error(w, "starts_at and ends_at are required", http.StatusBadRequest)
-		return
-	}
-	if !in.EndsAt.After(in.StartsAt) {
-		http.Error(w, "ends_at must be after starts_at", http.StatusBadRequest)
-		return
-	}
-
-	m := &Mute{
-		ID:        NewMuteID(),
+	view, err := CreateMute(r.Context(), h.store, CreateMuteRequest{
 		Matchers:  in.Matchers,
-		StartsAt:  in.StartsAt.UTC(),
-		EndsAt:    in.EndsAt.UTC(),
+		StartsAt:  in.StartsAt,
+		EndsAt:    in.EndsAt,
 		Comment:   in.Comment,
 		CreatedBy: in.CreatedBy,
-	}
-	if err := h.store.Create(r.Context(), m); err != nil {
+	})
+	if err != nil {
+		var ve *ValidationError
+		if errors.As(err, &ve) {
+			http.Error(w, ve.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "create: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"id": m.ID})
+	writeJSON(w, http.StatusOK, map[string]string{"id": view.ID})
 }
 
 func (h *mutesHandler) get(w http.ResponseWriter, r *http.Request, id string) {
-	m, err := h.store.Get(r.Context(), id)
+	view, err := GetMute(r.Context(), h.store, id)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, muteToOut(m, time.Now().UTC()))
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (h *mutesHandler) expire(w http.ResponseWriter, r *http.Request, id string) {
@@ -144,30 +122,6 @@ func (h *mutesHandler) expire(w http.ResponseWriter, r *http.Request, id string)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-}
-
-// muteToOut renders a Mute as its API output form, computing
-// pending/active/expired from `now` (closed interval [StartsAt,
-// EndsAt] is active).
-func muteToOut(m *Mute, now time.Time) muteOut {
-	var status string
-	switch {
-	case now.Before(m.StartsAt):
-		status = "pending"
-	case now.After(m.EndsAt):
-		status = "expired"
-	default:
-		status = "active"
-	}
-	return muteOut{
-		ID:        m.ID,
-		Matchers:  m.Matchers,
-		StartsAt:  m.StartsAt,
-		EndsAt:    m.EndsAt,
-		Comment:   m.Comment,
-		CreatedBy: m.CreatedBy,
-		Status:    status,
-	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
