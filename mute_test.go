@@ -81,9 +81,11 @@ func TestMuteMatchesAlert(t *testing.T) {
 func TestValidateMuteCreate(t *testing.T) {
 	now := time.Now().UTC()
 	base := CreateMuteRequest{
-		Matchers: map[string]string{"severity": "info"},
-		StartsAt: now,
-		EndsAt:   now.Add(1 * time.Hour),
+		Matchers:  map[string]string{"severity": "info"},
+		StartsAt:  now,
+		EndsAt:    now.Add(1 * time.Hour),
+		Comment:   "c",
+		CreatedBy: "u",
 	}
 	cases := []struct {
 		name      string
@@ -96,6 +98,10 @@ func TestValidateMuteCreate(t *testing.T) {
 		{"zero starts_at", func(r *CreateMuteRequest) { r.StartsAt = time.Time{} }, "starts_at"},
 		{"zero ends_at", func(r *CreateMuteRequest) { r.EndsAt = time.Time{} }, "ends_at"},
 		{"ends before starts", func(r *CreateMuteRequest) { r.EndsAt = r.StartsAt.Add(-1 * time.Hour) }, "ends_at"},
+		{"empty comment", func(r *CreateMuteRequest) { r.Comment = "" }, "comment"},
+		{"whitespace-only comment", func(r *CreateMuteRequest) { r.Comment = "   " }, "comment"},
+		{"empty created_by", func(r *CreateMuteRequest) { r.CreatedBy = "" }, "created_by"},
+		{"whitespace-only created_by", func(r *CreateMuteRequest) { r.CreatedBy = "   " }, "created_by"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

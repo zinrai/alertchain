@@ -25,8 +25,8 @@ type muteIn struct {
 	Matchers  map[string]string `json:"matchers"`
 	StartsAt  time.Time         `json:"starts_at"`
 	EndsAt    time.Time         `json:"ends_at"`
-	Comment   string            `json:"comment,omitempty"`
-	CreatedBy string            `json:"created_by,omitempty"`
+	Comment   string            `json:"comment"`
+	CreatedBy string            `json:"created_by"`
 }
 
 type mutesHandler struct {

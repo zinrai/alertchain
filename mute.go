@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 	"time"
 )
 
@@ -163,6 +164,12 @@ func validateMuteCreate(req CreateMuteRequest) error {
 	}
 	if !req.EndsAt.After(req.StartsAt) {
 		return &ValidationError{Field: "ends_at", Message: "ends_at must be after starts_at"}
+	}
+	if strings.TrimSpace(req.Comment) == "" {
+		return &ValidationError{Field: "comment", Message: "comment is required"}
+	}
+	if strings.TrimSpace(req.CreatedBy) == "" {
+		return &ValidationError{Field: "created_by", Message: "created_by is required"}
 	}
 	return nil
 }

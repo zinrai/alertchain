@@ -288,6 +288,11 @@ Example mute payload:
 }
 ```
 
+All five fields are required on `POST /api/v1/mutes`. `comment` and
+`created_by` are rejected with HTTP 400 if empty or whitespace-only,
+so every persisted mute carries the audit trail of who created it
+and why.
+
 The GET responses additionally carry a `status` field computed from
 the current time, one of `"pending"`, `"active"`, or `"expired"`.
 
