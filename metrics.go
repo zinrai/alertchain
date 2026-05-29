@@ -1,13 +1,8 @@
-// metrics.go exposes a handful of counters in the Prometheus text
-// exposition format. The implementation uses only the standard library
-// to avoid a direct dependency on prometheus/client_golang: alertchain
-// produces a small fixed set of counters (no labels, no histograms),
-// which the stdlib handles in ~30 lines.
+// metrics.go exposes counters in the Prometheus text exposition format.
 //
-// Counters are incremented via methods on *Metrics. The methods are
-// nil-receiver safe so that Chain can use them unconditionally even
-// when Metrics is not wired up (e.g. in unit tests that construct a
-// Chain directly).
+// The increment methods are nil-receiver safe so Chain can use them
+// unconditionally even when Metrics is unset (e.g. in tests that
+// construct a Chain directly).
 package main
 
 import (
@@ -17,8 +12,7 @@ import (
 )
 
 // Metrics holds the counters exposed via /metrics. A nil *Metrics is
-// valid: all increment methods short-circuit, so tests can leave the
-// field unset on Chain without panicking.
+// valid: all increment methods short-circuit.
 type Metrics struct {
 	AlertsReceived       atomic.Uint64
 	NotifySuccess        atomic.Uint64
@@ -71,10 +65,7 @@ func (m *Metrics) incHistoryWriteFailure() {
 }
 
 // ServeHTTP writes the current counter values in the Prometheus
-// exposition format. The endpoint is unauthenticated; operators that
-// need access control should put a reverse proxy in front of
-// alertchain (the same expectation that applies to the rest of the
-// HTTP surface).
+// exposition format. The endpoint is unauthenticated.
 func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 

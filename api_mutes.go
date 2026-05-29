@@ -1,10 +1,4 @@
-// api_mutes.go implements the mute endpoints of the HTTP API.
-//
-// The wire format is alertchain's own, intentionally not Alertmanager
-// v2 silence compatible. See DESIGN.md for the reasoning: the silence
-// API surface is shaped by Alertmanager's repeating-notification model
-// (auto-silence scripts, ChatOps integrations, schedulers) which has
-// no place in alertchain.
+// api_mutes.go implements the /api/v1/mutes endpoints.
 //
 // Routes:
 //
@@ -152,10 +146,9 @@ func (h *mutesHandler) expire(w http.ResponseWriter, r *http.Request, id string)
 	w.WriteHeader(http.StatusOK)
 }
 
-// muteToOut renders a Mute as its API output form, computing the
-// pending/active/expired status from `now`. The boundary semantics
-// match the internal Mute.Active method: a mute is active on the
-// closed interval [StartsAt, EndsAt].
+// muteToOut renders a Mute as its API output form, computing
+// pending/active/expired from `now` (closed interval [StartsAt,
+// EndsAt] is active).
 func muteToOut(m *Mute, now time.Time) muteOut {
 	var status string
 	switch {

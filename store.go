@@ -1,18 +1,6 @@
 // store.go is the PostgreSQL implementation of MuteStore and
-// NotificationHistory.
-//
-// This file contains only DML (SELECT, INSERT, UPDATE, DELETE). The
-// schema itself is not managed here: see migrations/ in the repository
-// root for the SQL migration files, which are applied by the standard
-// golang-migrate CLI (or any equivalent tool) as a separate operation
-// before alertchain is started. The rationale for keeping migration
-// out of the application binary is in DESIGN.md under "Schema
-// management is separated from the application".
-//
-// HA is delegated to PostgreSQL (managed services, streaming
-// replication, etc.). alertchain itself does not implement clustering
-// or gossip; the second invariant in DESIGN.md is "state lives in one
-// place" and that one place is the database.
+// NotificationHistory. DML only; schema is managed by migrations/
+// applied out-of-band before startup.
 package main
 
 import (
@@ -36,12 +24,10 @@ type Store struct {
 // URL form (postgres://user:pass@host/db) and key/value form
 // (host=... user=... dbname=...) are accepted.
 //
-// The schema must already exist when OpenStore is called. alertchain
-// itself does not create tables; that is the responsibility of an
-// out-of-band migration step. A sanity check at the end of this
-// function verifies that the expected tables are present so that a
-// misconfigured deployment fails fast at startup, rather than at the
-// first runtime query.
+// The schema must already exist; OpenStore does not create tables.
+// A sanity check verifies the expected tables are present so a
+// misconfigured deployment fails at startup rather than at the first
+// runtime query.
 func OpenStore(ctx context.Context, dsn string) (*Store, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -64,12 +50,9 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// checkSchema verifies that the tables alertchain reads from and
-// writes to are present. The check is intentionally narrow: it does
-// not validate column types or indexes (the migration tool is
-// responsible for those). The goal is only to detect the common
-// misconfiguration "migrations have not been applied" and surface it
-// at startup with a clear error.
+// checkSchema verifies the required tables are present. The check is
+// intentionally narrow: it does not validate column types or indexes
+// (the migration tool owns those).
 func (s *Store) checkSchema(ctx context.Context) error {
 	for _, table := range []string{"mutes", "notifications"} {
 		// LIMIT 0 returns no rows but still parses and plans the
@@ -84,15 +67,8 @@ func (s *Store) checkSchema(ctx context.Context) error {
 	return nil
 }
 
-// Matches implements MuteStore. It loads currently active mutes and
-// checks each against the alert. A linear scan over the active set is
-// fast enough for the expected scale (typically only a handful of
-// mutes are active at once; mute is an operator-driven feature).
-//
-// The "active" predicate uses the closed interval [starts_at, ends_at]
-// to match Alertmanager's silence boundary semantics in
-// silence/silence.go::getState. Operators familiar with Alertmanager
-// see no surprise at the boundary.
+// Matches implements MuteStore. Linear scan over the active set;
+// typically only a handful of mutes are active at once.
 func (s *Store) Matches(ctx context.Context, alert *Alert) (bool, error) {
 	now := time.Now().UTC()
 	rows, err := s.db.QueryContext(ctx,

@@ -199,8 +199,7 @@ func cmdCheck(args []string) error {
 
 // cmdVerify runs a YAML table of routing expectations against the
 // configuration. Exit code 0 means all cases passed; exit code 1 (via
-// run's error return path) means one or more failed. The intended
-// use is pre-deployment verification in CI.
+// run's error return path) means one or more failed.
 func cmdVerify(args []string) error {
 	fs := newFlagSet("verify")
 	var (
@@ -230,9 +229,6 @@ func cmdVerify(args []string) error {
 }
 
 // openStoreWithTimeout wraps OpenStore with a startup-time deadline.
-// The connection and schema sanity check should complete promptly; if
-// they do not, the process fails fast and the operator can investigate
-// before traffic starts.
 func openStoreWithTimeout(dsn string) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

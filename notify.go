@@ -65,25 +65,16 @@ func (n *HTTPNotifier) Notify(ctx context.Context, recv *Receiver, alert *Alert)
 	}
 }
 
-// webhookPayload is the body sent to webhook receivers. The format
-// matches the Alertmanager v2 webhook payload closely enough that
-// existing adapters (karma, alertmanager-discord, etc.) can be reused.
-//
-// Each alert object includes the derived `fingerprint` and `status`
-// fields. The fingerprint is computed via the same algorithm as
-// Alertmanager (model.LabelSet.Fingerprint()), which is the
-// deduplication key that webhook receivers are expected to use. See
-// README "Notification semantics" for the responsibility split between
-// alertchain and webhook receivers.
+// webhookPayload is the body sent to webhook receivers. Shape matches
+// the Alertmanager v2 webhook payload.
 type webhookPayload struct {
 	Receiver string         `json:"receiver"`
 	Status   string         `json:"status"`
 	Alerts   []webhookAlert `json:"alerts"`
 }
 
-// webhookAlert is the per-alert object inside the webhook payload. It
-// is the alertchain Alert plus the derived fields (status, fingerprint)
-// that webhook receivers expect.
+// webhookAlert is the per-alert object inside the webhook payload.
+// Adds derived fields (status, fingerprint) on top of Alert.
 type webhookAlert struct {
 	Status       string            `json:"status"`
 	Labels       map[string]string `json:"labels"`
@@ -139,8 +130,7 @@ func (n *HTTPNotifier) notifyWebhook(ctx context.Context, recv *Receiver, alert 
 }
 
 // alertStatus returns "resolved" if the alert has a non-zero EndsAt at
-// or before now, otherwise "firing". The boundary is the closed
-// interval, matching desiredStatus and Mute.Active.
+// or before now, otherwise "firing".
 func alertStatus(a *Alert) string {
 	if !a.EndsAt.IsZero() && !a.EndsAt.After(time.Now()) {
 		return "resolved"

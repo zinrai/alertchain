@@ -1,14 +1,7 @@
-// api_alerts.go implements the alerts endpoints of the HTTP API.
-//
-// Wire format follows Alertmanager v2 exactly because the type
-// definitions are imported from
-// github.com/prometheus/alertmanager/api/v2/models. This guarantees
-// that Prometheus, vmalert, promxy, and other clients of the
-// Alertmanager v2 API can send alerts to alertchain without changes.
+// api_alerts.go implements the /api/v2/alerts endpoints.
 //
 // Endpoints intentionally not implemented: alertgroups, receivers,
-// status. These expose Alertmanager internal concepts (aggregation
-// groups, route tree) that alertchain does not have.
+// status.
 package main
 
 import (
@@ -40,14 +33,12 @@ func (h *alertsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// post accepts a batch of alerts and processes each. Per Alertmanager
-// convention the body is a JSON array of postableAlert objects.
+// post accepts a batch of alerts and processes each. Body is a JSON
+// array of postableAlert objects.
 //
-// A Process error indicates a database failure that prevented the
-// alert from being evaluated. The handler returns 500 in that case so
-// that the sender (Prometheus, vmalert, etc.) retries on its next
-// push. Alerts processed earlier in the same batch are not rolled
-// back; the firing-sent state machine deduplicates them on the retry.
+// A Process error (database failure) returns 500. Alerts processed
+// earlier in the same batch are not rolled back; the firing-sent state
+// machine deduplicates them on the sender's retry.
 func (h *alertsHandler) post(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20))
 	if err != nil {
@@ -73,9 +64,7 @@ func (h *alertsHandler) post(w http.ResponseWriter, r *http.Request) {
 }
 
 // get returns the currently active alerts. alertchain does not
-// maintain a long-term active alerts cache, so this endpoint returns
-// an empty array. Clients that need the active set should query
-// Prometheus directly.
+// maintain an active-alerts cache; this endpoint always returns [].
 func (h *alertsHandler) get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, []any{})
 }

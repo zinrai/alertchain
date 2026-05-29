@@ -1,9 +1,5 @@
-// trace.go implements `alertchain trace`.
-//
-// Trace reads one alert as JSON from a file and reports, for each rule
-// in order, whether it matched and what decision was produced. This is
-// the iptables --trace analogue: a one-shot, side-effect-free dry run
-// of the chain against a hypothetical alert.
+// trace.go implements `alertchain trace`: a one-shot, side-effect-free
+// dry run of the chain against a hypothetical alert.
 package main
 
 import (

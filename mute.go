@@ -1,12 +1,5 @@
-// mute.go defines the mute model and the MuteStore interface.
-//
-// A Mute suppresses any alert whose labels match every entry in the
-// mute's Matchers map. Mutes are time-bounded: a mute is active only
-// when StartsAt <= now <= EndsAt.
-//
-// Mutes are alertchain's own concept; they are not the Alertmanager
-// silence type and do not share its wire format. See DESIGN.md for
-// the reasoning behind keeping them separate.
+// mute.go defines the Mute type and the MuteStore / NotificationHistory
+// interfaces.
 package main
 
 import (
@@ -16,7 +9,7 @@ import (
 	"time"
 )
 
-// Mute represents one mute entry in the internal representation.
+// Mute is one mute entry.
 type Mute struct {
 	ID        string
 	Matchers  map[string]string // all entries must equal the alert's labels
@@ -26,12 +19,8 @@ type Mute struct {
 	CreatedBy string
 }
 
-// Active reports whether the mute is currently in effect.
-//
-// The interval is closed at both ends: [StartsAt, EndsAt]. This is
-// the same boundary semantics Alertmanager applies to silences;
-// alertchain mirrors it so that operators familiar with one system
-// experience no surprise at boundaries.
+// Active reports whether the mute is currently in effect. The interval
+// is closed at both ends: [StartsAt, EndsAt].
 func (m *Mute) Active(now time.Time) bool {
 	return !now.Before(m.StartsAt) && !now.After(m.EndsAt)
 }
@@ -54,11 +43,7 @@ func NewMuteID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// MuteStore persists mutes. The interface is small enough that a
-// caller could swap PostgreSQL for a test fake without ceremony.
-//
-// The method name Matches (rather than Mutes) avoids a confusing
-// noun/verb collision with the type name.
+// MuteStore persists mutes.
 type MuteStore interface {
 	// Matches reports whether any active mute applies to the alert.
 	Matches(ctx context.Context, alert *Alert) (bool, error)
@@ -78,14 +63,7 @@ type MuteStore interface {
 }
 
 // NotificationHistory records the most recent notification attempt for
-// each (rule, fingerprint) pair, including which firing/resolved state
-// was attempted and whether it succeeded.
-//
-// The four recorded statuses (firing-sent, firing-failed,
-// resolved-sent, resolved-failed) drive Process's decision to skip or
-// re-deliver: a prior success of the same status causes skip, while
-// any other recorded value (including the opposite firing/resolved
-// state and the failed variants) causes another delivery attempt.
+// each (rule, fingerprint) pair.
 type NotificationHistory interface {
 	// LastAttempt returns the recorded status of the most recent
 	// attempt for the given (rule, fingerprint) pair. The exists

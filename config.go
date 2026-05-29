@@ -1,9 +1,4 @@
 // config.go parses the alertchain YAML file into a *Chain.
-//
-// Match conditions are a YAML map from label name to expected value;
-// all entries must be equal for the rule to apply. There is no
-// matcher mini-language and no parser: the YAML decoder produces the
-// map directly, and the runtime evaluates equality with matchAll.
 package main
 
 import (
@@ -81,8 +76,7 @@ func LoadConfig(path string) (*Chain, error) {
 	}
 
 	// Built-in receiver: a rule may target "discard" to drop matching
-	// alerts without configuring anything. This is the recommended way
-	// to express both catch-all suppression and noisy-source filtering.
+	// alerts.
 	chain.Receivers[BuiltinDiscardReceiver] = &Receiver{
 		Name: BuiltinDiscardReceiver,
 		Type: "discard",
@@ -105,7 +99,7 @@ func LoadConfig(path string) (*Chain, error) {
 }
 
 // resolveFileFields reads *_file fields and populates the corresponding
-// inline fields. This keeps secrets out of the YAML.
+// inline fields.
 func (r *Receiver) resolveFileFields() error {
 	if r.URLFile != "" && r.URL == "" {
 		b, err := os.ReadFile(r.URLFile)

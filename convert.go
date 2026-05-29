@@ -1,11 +1,5 @@
-// convert.go translates between alertchain internal types and the
-// Alertmanager v2 alert wire format.
-//
-// alertchain consumes one Alertmanager v2 endpoint (POST /api/v2/alerts)
-// to remain compatible with Prometheus, vmalert, and promxy. The
-// conversion is one-directional: incoming PostableAlerts are translated
-// into the internal Alert type. The mute API and all other endpoints
-// are alertchain's own and do not go through this layer.
+// convert.go translates Alertmanager v2 PostableAlerts into the
+// alertchain internal Alert type. One-directional.
 package main
 
 import (

@@ -1,18 +1,4 @@
-// chain.go defines the core types and the rule evaluation logic.
-//
-// The evaluation model is iptables-like: rules are evaluated top-to-bottom,
-// matching rules produce decisions, and the chain stops at the first match
-// unless the rule has Continue=true.
-//
-// There is no tree, no inheritance, no parent fallback, no per-rule
-// defaults block. A rule's behavior is fully self-contained.
-//
-// Matching is label-equality only. A rule's Match is a map from label
-// name to expected value, and all entries must match exactly (logical
-// AND) for the rule to apply. Conditions that would require negation,
-// alternation, or regex are expressed by writing multiple rules in the
-// order that produces the desired routing — see DESIGN.md for the
-// rationale.
+// chain.go defines the core types and the rule evaluation loop.
 package main
 
 import (
@@ -29,10 +15,9 @@ import (
 // Chain.Receivers; users cannot declare a receiver with this name.
 const BuiltinDiscardReceiver = "discard"
 
-// notifyTimeout bounds the total time a single webhook delivery is
-// allowed to take. The Process loop applies this via context.WithTimeout
-// on every Notify invocation. Keeping the timeout in one place avoids
-// the dual-timeout pitfalls of also setting it on the http.Client.
+// notifyTimeout bounds a single webhook delivery. Applied via
+// context.WithTimeout in Process; do not also set it on http.Client
+// (the two timeouts have different cancellation semantics).
 const notifyTimeout = 10 * time.Second
 
 // matchAll reports whether every (name, want) entry in conditions
@@ -48,8 +33,7 @@ func matchAll(conditions, labels map[string]string) bool {
 }
 
 // Rule is one row in the chain. Rules are evaluated top-to-bottom in
-// config-file order. A rule is completely self-contained; there is no
-// inheritance from anywhere.
+// config-file order.
 type Rule struct {
 	Name     string            // required, unique, used as state key
 	Match    map[string]string // empty or nil means catch-all
@@ -57,15 +41,9 @@ type Rule struct {
 	Continue bool              // when true, continue evaluating subsequent rules
 }
 
-// Receiver describes how to deliver a notification. Only the "webhook"
-// type is configurable; the "discard" type is built-in and is injected
-// by LoadConfig (users cannot declare a receiver of that type or with
-// that name).
-//
-// For destinations other than a generic webhook (Slack, Email,
-// PagerDuty, etc.), point a webhook receiver at a small adapter service
-// that translates the payload. This responsibility is intentionally
-// kept outside alertchain.
+// Receiver describes how to deliver a notification. The "discard" type
+// is built-in and injected by LoadConfig; users cannot declare a
+// receiver of that type or with that name.
 type Receiver struct {
 	Name    string
 	Type    string // "webhook" | "discard"
@@ -73,8 +51,8 @@ type Receiver struct {
 	URLFile string // webhook only (URL is read from this file at load time)
 }
 
-// Alert is the unit of input. Field names follow the Alertmanager v2 API
-// for compatibility.
+// Alert is the unit of input. Field names mirror the Alertmanager v2
+// PostableAlert shape.
 type Alert struct {
 	Labels       map[string]string `json:"labels"`
 	Annotations  map[string]string `json:"annotations,omitempty"`
@@ -83,12 +61,9 @@ type Alert struct {
 	GeneratorURL string            `json:"generatorURL,omitempty"`
 }
 
-// Fingerprint computes a stable identifier for the alert from its labels.
-// The implementation delegates to model.LabelSet.Fingerprint() from
-// prometheus/common/model, so the resulting value is byte-identical to
-// the one Alertmanager produces for the same label set. A webhook
-// receiver that deduplicates Alertmanager-sourced alerts by fingerprint
-// will deduplicate alertchain-sourced alerts identically.
+// Fingerprint computes a stable identifier for the alert from its
+// labels. The value is byte-identical to model.LabelSet.Fingerprint()
+// from prometheus/common/model.
 func (a *Alert) Fingerprint() string {
 	ls := make(model.LabelSet, len(a.Labels))
 	for k, v := range a.Labels {
@@ -131,19 +106,13 @@ func (c *Chain) Evaluate(alert *Alert) []Decision {
 	return decisions
 }
 
-// Process is the main entry point during `serve`. It checks mutes,
-// evaluates the chain, applies the firing/resolved state machine, and
-// dispatches notifications.
+// Process evaluates one alert through mutes + rules and dispatches any
+// matching notifications.
 //
-// Error contract: Process returns a non-nil error if and only if the
-// alert could not be fully evaluated due to a database failure (mute
-// store lookup or history store lookup). Webhook delivery failures and
-// history-write failures are recorded and/or logged but never surface
-// as an error from Process. The rationale: when a DB read fails the
-// alert has not yet been acted on and re-pushing it from the sender
-// side is the correct recovery; when a webhook side-effect has already
-// occurred, aborting cannot undo it, and the next push will be
-// deduplicated by the webhook receiver via fingerprint.
+// Error contract: Process returns a non-nil error if and only if a
+// database read failed (mute store lookup or history store lookup).
+// Webhook delivery failures and history-write failures are recorded
+// and/or logged but never surface as an error from Process.
 func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 	muted, err := c.Mutes.Matches(ctx, alert)
 	if err != nil {
@@ -202,11 +171,9 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 			c.Metrics.incNotifySuccess()
 		}
 
-		// RecordAttempt failure is intentionally not propagated: the
-		// webhook side-effect (if any) has already occurred and cannot
-		// be undone by aborting. The next push from the sender side
-		// will produce another delivery, which webhook receivers
-		// deduplicate by fingerprint.
+		// RecordAttempt failure does not propagate: the webhook
+		// side-effect has already occurred and aborting cannot
+		// undo it.
 		if err := c.History.RecordAttempt(ctx, d.Rule.Name, fp, now, status); err != nil {
 			c.Logger.Error("history write failed",
 				"rule", d.Rule.Name, "err", err)
@@ -227,9 +194,7 @@ const (
 	StatusResolvedFailed NotificationStatus = "resolved-failed"
 )
 
-// Failed returns the failure-state counterpart of a sent status. It is
-// used to record the desired status as failed when the webhook attempt
-// returns an error.
+// Failed returns the failure-state counterpart of a sent status.
 func (s NotificationStatus) Failed() NotificationStatus {
 	switch s {
 	case StatusFiringSent:
@@ -240,15 +205,12 @@ func (s NotificationStatus) Failed() NotificationStatus {
 	return s
 }
 
-// desiredStatus returns the status that should be recorded if the
-// upcoming notification attempt succeeds. The two "sent" values are
-// the only ones returned here; "failed" variants are derived inside
-// Process when the attempt errors.
+// desiredStatus returns the status to record if the upcoming
+// notification attempt succeeds. Only the two "sent" values are
+// returned; "failed" variants are derived inside Process.
 //
-// The boundary policy is the closed interval: an alert whose EndsAt
-// equals now is considered resolved. This matches Mute.Active, which
-// also uses [StartsAt, EndsAt] closed-interval semantics, so the
-// "equal to now" case is treated consistently across the codebase.
+// Boundary: an alert with non-zero EndsAt <= now is considered
+// resolved (closed interval).
 func desiredStatus(a *Alert, now time.Time) NotificationStatus {
 	if !a.EndsAt.IsZero() && !a.EndsAt.After(now) {
 		return StatusResolvedSent
@@ -256,8 +218,7 @@ func desiredStatus(a *Alert, now time.Time) NotificationStatus {
 	return StatusFiringSent
 }
 
-// Validate checks invariants on the loaded chain. Called by `check` and
-// at startup.
+// Validate checks invariants on the loaded chain.
 func (c *Chain) Validate() error {
 	seenNames := map[string]bool{}
 	for i, r := range c.Rules {

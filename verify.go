@@ -1,17 +1,8 @@
-// verify.go implements `alertchain verify`.
+// verify.go implements `alertchain verify`: a table of routing
+// expectations checked against the static configuration.
 //
-// Verify runs a table of routing expectations against the loaded
-// configuration and reports whether each case routes to the expected
-// rules and receivers. The intended use is pre-deployment
-// verification in CI: a PR that changes alertchain.yaml is
-// accompanied by a change to the verify file, and a regression in
-// routing behavior fails the CI job.
-//
-// Scope: the verify command checks the static routing table only.
-// Mutes are runtime state managed via the HTTP API and are not part
-// of the deployable configuration, so they are out of scope here.
-// Use `alertchain trace` against a running server for ad-hoc
-// "would this mute suppress this alert" questions.
+// Scope: routing only. Mutes are runtime state and out of scope here;
+// use `alertchain trace` for mute questions.
 package main
 
 import (
@@ -30,12 +21,9 @@ type verifyFile struct {
 
 // verifyCase is one row in the routing verification table.
 //
-// Labels are the alert's labels (same shape as the JSON body of POST
-// /api/v2/alerts, minus the wrapping fields). Expect.Rules and
-// Expect.Receivers are both required: both names must match exactly,
-// order-independent. A case that asserts the rule path but not the
-// receiver, or vice versa, would leave the other dimension free to
-// drift unnoticed, so the schema does not allow it.
+// Expect.Rules and Expect.Receivers are both required and must match
+// exactly (order-independent). Omitting either would leave that
+// dimension free to drift unnoticed.
 type verifyCase struct {
 	Name        string     `yaml:"name"`
 	Labels      labelMap   `yaml:"labels"`
@@ -141,10 +129,7 @@ func compareExpectations(expect expectSpec, gotRules, gotReceivers []string) []s
 }
 
 // sameSet reports whether a and b contain the same multiset of
-// strings. Order is ignored. Duplicates count: this matches the
-// alertchain semantics where each Decision is a distinct (rule,
-// alert) pair, so two decisions reaching the same receiver are
-// counted twice.
+// strings. Order is ignored; duplicates count.
 func sameSet(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

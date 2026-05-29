@@ -1,14 +1,9 @@
 // server.go assembles the HTTP routes that alertchain serves.
 //
-// The HTTP mux construction is intentionally separated from cmdServe in
-// main.go so that tests can build a server with the same routing as
-// production without going through the CLI entry point. Without this
-// split, tests would need to re-implement the route table, creating a
-// silent drift risk whenever a new endpoint is added.
-//
-// Lifecycle concerns (signal handling, graceful shutdown, listen
-// address) remain in cmdServe; this file only describes what the
-// server responds to.
+// Separated from cmdServe so tests can build a server with the same
+// route table as production without going through the CLI entry point.
+// Lifecycle concerns (signals, graceful shutdown, listen address)
+// remain in cmdServe.
 package main
 
 import (
