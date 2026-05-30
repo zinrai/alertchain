@@ -79,12 +79,14 @@ type Decision struct {
 }
 
 // Chain is the top-level evaluation engine. It holds the rules, the
-// receivers map, the mute store, and the notification history store.
+// receivers map, the mute store, the notification history store, and
+// the alert observability store.
 type Chain struct {
 	Rules     []*Rule
 	Receivers map[string]*Receiver
 	Mutes     MuteStore
 	History   NotificationHistory
+	Alerts    AlertStore // optional; nil skips observability writes
 	Notifier  Notifier
 	Logger    *slog.Logger
 	Metrics   *Metrics // optional; nil disables counter updates
@@ -114,6 +116,17 @@ func (c *Chain) Evaluate(alert *Alert) []Decision {
 // Webhook delivery failures and history-write failures are recorded
 // and/or logged but never surface as an error from Process.
 func (c *Chain) Process(ctx context.Context, alert *Alert) error {
+	// Observability: record the alert in the alerts table so the UI
+	// can show what alertchain has seen. Failure here is logged but
+	// does not abort Process; dedup and notification are the critical
+	// path, observability is best-effort.
+	if c.Alerts != nil {
+		if err := c.Alerts.UpsertAlert(ctx, alert, time.Now().UTC()); err != nil {
+			c.Logger.Error("upsert alert failed",
+				"fingerprint", alert.Fingerprint(), "err", err)
+		}
+	}
+
 	muted, err := c.Mutes.Matches(ctx, alert)
 	if err != nil {
 		c.Metrics.IncMuteLookupFailure()

@@ -2,7 +2,7 @@
 {{define "content"}}
 <h2>New mute</h2>
 
-<form method="POST" action="/ui/" class="mute-form">
+<form method="POST" action="/ui/mutes/" class="mute-form">
 
   <section class="form-section">
     <h3>Time (UTC)</h3>
@@ -23,22 +23,12 @@
 
   <section class="form-section">
     <h3>Matchers</h3>
-    <p class="hint">All entries must match the alert's labels (logical AND).</p>
-    <div id="matchers">
-      {{range $k, $v := .Matchers}}
-      <div class="matcher-row">
-        <input type="text" name="match-name" value="{{$k}}" placeholder="label">
-        <input type="text" name="match-value" value="{{$v}}" placeholder="value">
-        <button type="button" class="remove-row">×</button>
-      </div>
-      {{end}}
-      <div class="matcher-row">
-        <input type="text" name="match-name" placeholder="label">
-        <input type="text" name="match-value" placeholder="value">
-        <button type="button" class="remove-row">×</button>
-      </div>
-    </div>
-    <button type="button" id="add-matcher-row">Add row</button>
+    <p class="hint">
+      Paste labels as space-separated <code>key=value</code> pairs. All
+      entries must match the alert's labels (logical AND).
+    </p>
+    <textarea name="matchers-text" id="matchers-text" rows="2" required
+              placeholder="alertname=MemoryPressure host=web01 severity=warning team=infra">{{.MatchersText}}</textarea>
     {{with index .Error "matchers"}}<p class="error">{{.}}</p>{{end}}
   </section>
 
@@ -56,7 +46,7 @@
 
   <div class="form-actions">
     <button type="submit" class="button button-primary">Create mute</button>
-    <a href="/ui/" class="button">Cancel</a>
+    <a href="/ui/mutes/" class="button">Cancel</a>
   </div>
 </form>
 

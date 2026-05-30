@@ -49,9 +49,9 @@ type MuteStore interface {
 	// Matches reports whether any active mute applies to the alert.
 	Matches(ctx context.Context, alert *Alert) (bool, error)
 
-	// List returns all mutes (active and expired) ordered by EndsAt
+	// List returns mutes filtered by status, ordered by EndsAt
 	// descending.
-	List(ctx context.Context) ([]*Mute, error)
+	List(ctx context.Context, filter MuteFilter) ([]*Mute, error)
 
 	// Get returns one mute by ID.
 	Get(ctx context.Context, id string) (*Mute, error)
@@ -62,6 +62,26 @@ type MuteStore interface {
 	// Expire sets a mute's EndsAt to now, ending it immediately.
 	Expire(ctx context.Context, id string) error
 }
+
+// MuteFilter selects which mutes to return. The default (MutesAll) is
+// no filter; MutesPresent restricts to active + pending (anything not
+// yet expired) and MutesExpired to the historical set.
+type MuteFilter struct {
+	Status MuteStatusFilter
+}
+
+// MuteStatusFilter narrows the mute list by lifecycle stage. alertchain
+// has no retention on mutes, so without filtering the expired set
+// grows unbounded and dominates the present-tense view; UI and API
+// callers should default to MutesPresent and offer MutesExpired only
+// as a deliberate history lookup.
+type MuteStatusFilter string
+
+const (
+	MutesAll     MuteStatusFilter = ""        // any status
+	MutesPresent MuteStatusFilter = "present" // active + pending (ends_at >= now)
+	MutesExpired MuteStatusFilter = "expired" // ends_at < now
+)
 
 // NotificationHistory records the most recent notification attempt for
 // each (rule, fingerprint) pair.
@@ -127,10 +147,11 @@ func CreateMute(ctx context.Context, store MuteStore, req CreateMuteRequest) (Mu
 	return projectMuteView(m, time.Now().UTC()), nil
 }
 
-// ListMutes returns all stored mutes projected against a single
-// "now" snapshot, so the status field is consistent across the slice.
-func ListMutes(ctx context.Context, store MuteStore) ([]MuteView, error) {
-	mutes, err := store.List(ctx)
+// ListMutes returns stored mutes filtered by status, projected
+// against a single "now" snapshot so the status field is consistent
+// across the slice.
+func ListMutes(ctx context.Context, store MuteStore, filter MuteFilter) ([]MuteView, error) {
+	mutes, err := store.List(ctx, filter)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -56,7 +57,7 @@ func (s *Store) Close() error {
 // intentionally narrow: it does not validate column types or indexes
 // (the migration tool owns those).
 func (s *Store) checkSchema(ctx context.Context) error {
-	for _, table := range []string{"mutes", "notifications"} {
+	for _, table := range []string{"mutes", "notifications", "alerts"} {
 		// LIMIT 0 returns no rows but still parses and plans the
 		// query, which fails with SQLSTATE 42P01 if the relation is
 		// absent. This is cheaper than a SELECT COUNT(*) and does not
@@ -100,11 +101,22 @@ func (s *Store) Matches(ctx context.Context, alert *alertchain.Alert) (bool, err
 	return false, nil
 }
 
-// List implements MuteStore.
-func (s *Store) List(ctx context.Context) ([]*alertchain.Mute, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, matchers, starts_at, ends_at, comment, created_by
-		 FROM mutes ORDER BY ends_at DESC`)
+// List implements MuteStore. The MutesPresent / MutesExpired filter
+// uses the closed-interval boundary: ends_at == now is still present.
+func (s *Store) List(ctx context.Context, filter alertchain.MuteFilter) ([]*alertchain.Mute, error) {
+	var args []any
+	where := ""
+	switch filter.Status {
+	case alertchain.MutesPresent:
+		args = append(args, time.Now().UTC())
+		where = "WHERE ends_at >= $1"
+	case alertchain.MutesExpired:
+		args = append(args, time.Now().UTC())
+		where = "WHERE ends_at < $1"
+	}
+	q := fmt.Sprintf(`SELECT id, matchers, starts_at, ends_at, comment, created_by
+		FROM mutes %s ORDER BY ends_at DESC`, where)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list mutes: %w", err)
 	}
@@ -230,4 +242,182 @@ func scanMute(r rowScanner) (*alertchain.Mute, error) {
 		Comment:   comment.String,
 		CreatedBy: createdBy.String,
 	}, nil
+}
+
+// UpsertAlert implements alertchain.AlertStore. Annotations and
+// generatorURL on the Alert struct are not persisted; they are
+// presentation content the webhook destination renders.
+func (s *Store) UpsertAlert(ctx context.Context, alert *alertchain.Alert, now time.Time) error {
+	labelsJSON, err := json.Marshal(alert.Labels)
+	if err != nil {
+		return fmt.Errorf("encode labels: %w", err)
+	}
+	var endsAt sql.NullTime
+	if !alert.EndsAt.IsZero() {
+		endsAt = sql.NullTime{Time: alert.EndsAt.UTC(), Valid: true}
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO alerts
+			(fingerprint, labels, starts_at, ends_at, first_seen_at, last_seen_at)
+		VALUES ($1, $2, $3, $4, $5, $5)
+		ON CONFLICT (fingerprint) DO UPDATE SET
+			labels = EXCLUDED.labels,
+			ends_at = EXCLUDED.ends_at,
+			last_seen_at = EXCLUDED.last_seen_at
+	`, alert.Fingerprint(), labelsJSON, alert.StartsAt.UTC(), endsAt, now.UTC())
+	if err != nil {
+		return fmt.Errorf("upsert alert: %w", err)
+	}
+	return nil
+}
+
+const defaultAlertLimit = 100
+
+// alertSelectCols is the column list scanAlertRow expects.
+const alertSelectCols = `fingerprint, labels, starts_at, ends_at, first_seen_at, last_seen_at`
+
+// ListAlerts implements alertchain.AlertStore.
+func (s *Store) ListAlerts(ctx context.Context, filter alertchain.AlertFilter) ([]alertchain.AlertView, error) {
+	now := time.Now().UTC()
+	var args []any
+	conds := []string{}
+
+	switch filter.Status {
+	case alertchain.AlertsFiring:
+		args = append(args, now)
+		conds = append(conds, fmt.Sprintf("(alerts.ends_at IS NULL OR alerts.ends_at > $%d)", len(args)))
+	case alertchain.AlertsExpired:
+		args = append(args, now)
+		conds = append(conds, fmt.Sprintf("(alerts.ends_at IS NOT NULL AND alerts.ends_at <= $%d)", len(args)))
+	}
+
+	if filter.ExcludeMuted {
+		args = append(args, now)
+		// JSONB containment per row, evaluated against currently
+		// active mutes. The GIN index on alerts.labels is not used
+		// here because we are matching alerts.labels @> mutes.matchers
+		// (alerts is the LHS), but the active-mute set is expected to
+		// be small (low dozens) so the cost is bounded.
+		conds = append(conds, fmt.Sprintf(`NOT EXISTS (
+			SELECT 1 FROM mutes m
+			WHERE m.starts_at <= $%d AND m.ends_at >= $%d
+			  AND alerts.labels @> m.matchers
+		)`, len(args), len(args)))
+	}
+
+	where := ""
+	if len(conds) > 0 {
+		where = "WHERE " + strings.Join(conds, " AND ")
+	}
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = defaultAlertLimit
+	}
+	args = append(args, limit)
+
+	q := fmt.Sprintf(`SELECT %s FROM alerts %s ORDER BY last_seen_at DESC LIMIT $%d`,
+		alertSelectCols, where, len(args))
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list alerts: %w", err)
+	}
+	defer rows.Close()
+
+	return scanAlertRows(rows, now)
+}
+
+// GetAlert implements alertchain.AlertStore. Returns an error when
+// the fingerprint is not found.
+func (s *Store) GetAlert(ctx context.Context, fingerprint string) (alertchain.AlertView, error) {
+	now := time.Now().UTC()
+	row := s.db.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT %s FROM alerts WHERE fingerprint = $1`, alertSelectCols),
+		fingerprint)
+	v, err := scanAlertRow(row, now)
+	if errors.Is(err, sql.ErrNoRows) {
+		return alertchain.AlertView{}, fmt.Errorf("alert %q not found", fingerprint)
+	}
+	return v, err
+}
+
+// MatchingAlerts implements alertchain.AlertStore.
+//
+// The matchers map is JSON-encoded and passed to PostgreSQL's JSONB
+// containment operator (@>). An empty matchers map matches every
+// alert; the mute API rejects empty matchers on creation, so callers
+// from the UI should not arrive here with one.
+func (s *Store) MatchingAlerts(ctx context.Context, matchers map[string]string, filter alertchain.AlertFilter) ([]alertchain.AlertView, error) {
+	matchersJSON, err := json.Marshal(matchers)
+	if err != nil {
+		return nil, fmt.Errorf("encode matchers: %w", err)
+	}
+	now := time.Now().UTC()
+	where := "WHERE labels @> $1::jsonb"
+	args := []any{matchersJSON}
+	switch filter.Status {
+	case alertchain.AlertsFiring:
+		args = append(args, now)
+		where += fmt.Sprintf(" AND (ends_at IS NULL OR ends_at > $%d)", len(args))
+	case alertchain.AlertsExpired:
+		args = append(args, now)
+		where += fmt.Sprintf(" AND ends_at IS NOT NULL AND ends_at <= $%d", len(args))
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = defaultAlertLimit
+	}
+	args = append(args, limit)
+
+	q := fmt.Sprintf(`SELECT %s FROM alerts %s ORDER BY last_seen_at DESC LIMIT $%d`,
+		alertSelectCols, where, len(args))
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("matching alerts: %w", err)
+	}
+	defer rows.Close()
+
+	return scanAlertRows(rows, now)
+}
+
+func scanAlertRows(rows *sql.Rows, now time.Time) ([]alertchain.AlertView, error) {
+	var out []alertchain.AlertView
+	for rows.Next() {
+		v, err := scanAlertRow(rows, now)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func scanAlertRow(r rowScanner, now time.Time) (alertchain.AlertView, error) {
+	var (
+		fingerprint             string
+		labelsJSON              []byte
+		startsAt                time.Time
+		endsAt                  sql.NullTime
+		firstSeenAt, lastSeenAt time.Time
+	)
+	if err := r.Scan(&fingerprint, &labelsJSON, &startsAt, &endsAt, &firstSeenAt, &lastSeenAt); err != nil {
+		return alertchain.AlertView{}, err
+	}
+	var labels map[string]string
+	if err := json.Unmarshal(labelsJSON, &labels); err != nil {
+		return alertchain.AlertView{}, fmt.Errorf("decode labels: %w", err)
+	}
+	view := alertchain.AlertView{
+		Fingerprint: fingerprint,
+		Labels:      labels,
+		StartsAt:    startsAt,
+		FirstSeenAt: firstSeenAt,
+		LastSeenAt:  lastSeenAt,
+	}
+	if endsAt.Valid {
+		view.EndsAt = endsAt.Time
+	}
+	view.Status = alertchain.DeriveAlertStatus(view.EndsAt, now)
+	return view, nil
 }

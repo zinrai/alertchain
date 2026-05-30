@@ -129,6 +129,7 @@ func cmdServe(args []string) error {
 
 	chain.Mutes = db
 	chain.History = db
+	chain.Alerts = db
 	chain.Notifier = alertchain.NewHTTPNotifier()
 	chain.Logger = logger
 	chain.Metrics = metrics

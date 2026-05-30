@@ -147,7 +147,9 @@ type fakeMutes struct {
 func (f *fakeMutes) Matches(ctx context.Context, a *Alert) (bool, error) {
 	return f.muted, f.err
 }
-func (f *fakeMutes) List(ctx context.Context) ([]*Mute, error)         { return nil, nil }
+func (f *fakeMutes) List(ctx context.Context, _ MuteFilter) ([]*Mute, error) {
+	return nil, nil
+}
 func (f *fakeMutes) Get(ctx context.Context, id string) (*Mute, error) { return nil, nil }
 func (f *fakeMutes) Create(ctx context.Context, m *Mute) error         { return nil }
 func (f *fakeMutes) Expire(ctx context.Context, id string) error       { return nil }

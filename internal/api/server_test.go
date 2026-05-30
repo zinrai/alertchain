@@ -105,6 +105,7 @@ func newServerHarness(t *testing.T, receivers map[string]*alertchain.Receiver, r
 		Rules:     rules,
 		Mutes:     db,
 		History:   db,
+		Alerts:    db,
 		Notifier:  alertchain.NewHTTPNotifier(),
 		Logger:    logger,
 		Metrics:   metrics,

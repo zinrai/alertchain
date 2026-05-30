@@ -65,24 +65,4 @@
   startEl.addEventListener('input', recomputeEnd);
   durEl.addEventListener('input', recomputeEnd);
   endEl.addEventListener('input', recomputeDuration);
-
-  // Matcher row management.
-  var addBtn = document.getElementById('add-matcher-row');
-  var rows = document.getElementById('matchers');
-  if (addBtn && rows) {
-    addBtn.addEventListener('click', function () {
-      var row = document.createElement('div');
-      row.className = 'matcher-row';
-      row.innerHTML =
-        '<input type="text" name="match-name" placeholder="label">' +
-        '<input type="text" name="match-value" placeholder="value">' +
-        '<button type="button" class="remove-row">×</button>';
-      rows.appendChild(row);
-    });
-    rows.addEventListener('click', function (e) {
-      if (e.target.classList.contains('remove-row')) {
-        e.target.parentElement.remove();
-      }
-    });
-  }
 })();

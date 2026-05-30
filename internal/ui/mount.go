@@ -12,24 +12,40 @@ import (
 	"github.com/zinrai/alertchain/internal/alertchain"
 )
 
+// Store is the persistence surface the UI handlers need. It is the
+// union of the mute and alert lifecycle stores; *store.Store from
+// internal/store implements both.
+type Store interface {
+	alertchain.MuteStore
+	alertchain.AlertStore
+}
+
 // Mount registers the /ui/* routes on mux. The store argument is used
-// for mute persistence; the handlers call alertchain's lifecycle
-// functions (CreateMute / ListMutes / GetMute) through this store.
-func Mount(mux *http.ServeMux, store alertchain.MuteStore, logger *slog.Logger, cfg alertchain.UIConfig) {
+// for both mute lifecycle calls (CreateMute / ListMutes / GetMute /
+// store.Expire) and alert observability (ListAlerts / GetAlert /
+// MatchingAlerts).
+func Mount(mux *http.ServeMux, store Store, logger *slog.Logger, cfg alertchain.UIConfig) {
 	h := &uiHandler{
-		store:      store,
-		logger:     logger,
-		userHeader: cfg.UserHeader,
-		listTmpl:   mustParseUITemplate("templates/layout.html", "templates/list.html"),
-		newTmpl:    mustParseUITemplate("templates/layout.html", "templates/new.html"),
-		detailTmpl: mustParseUITemplate("templates/layout.html", "templates/detail.html"),
+		store:          store,
+		logger:         logger,
+		userHeader:     cfg.UserHeader,
+		alertsListTmpl: mustParseUITemplate("templates/layout.html", "templates/alerts_list.html"),
+		muteListTmpl:   mustParseUITemplate("templates/layout.html", "templates/mute_list.html"),
+		muteNewTmpl:    mustParseUITemplate("templates/layout.html", "templates/mute_new.html"),
 	}
 
-	mux.HandleFunc("GET /ui/{$}", h.list)
-	mux.HandleFunc("POST /ui/{$}", h.create)
-	mux.HandleFunc("GET /ui/new", h.newForm)
-	mux.HandleFunc("GET /ui/{id}", h.detail)
-	mux.HandleFunc("POST /ui/{id}/expire", h.expire)
+	// Alerts (root view = "what's happening"). All info is inlined on
+	// the list page; there is no per-alert detail route.
+	mux.HandleFunc("GET /ui/{$}", h.alertsList)
+
+	// Mutes. Each mute's matching alerts are inlined on the list
+	// page; there is no per-mute detail route.
+	mux.HandleFunc("GET /ui/mutes/{$}", h.mutesList)
+	mux.HandleFunc("POST /ui/mutes/{$}", h.muteCreate)
+	mux.HandleFunc("GET /ui/mutes/new", h.muteNewForm)
+	mux.HandleFunc("POST /ui/mutes/{id}/expire", h.muteExpire)
+
+	// Root redirect.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusFound)
 	})

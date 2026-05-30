@@ -2,10 +2,16 @@
 //
 // Routes:
 //
-//	GET    /api/v1/mutes         list all mutes
-//	POST   /api/v1/mutes         create
-//	GET    /api/v1/mutes/{id}    get one
-//	DELETE /api/v1/mutes/{id}    expire immediately
+//	GET    /api/v1/mutes                  list active + pending mutes
+//	GET    /api/v1/mutes?status=expired   list expired mutes
+//	POST   /api/v1/mutes                  create
+//	GET    /api/v1/mutes/{id}             get one
+//	DELETE /api/v1/mutes/{id}             expire immediately
+//
+// GET defaults to active + pending. alertchain does not retain mutes,
+// so an unfiltered list would grow unbounded over time; the default
+// shows what is operationally relevant and ?status=expired exposes
+// the historical set deliberately.
 package api
 
 import (
@@ -68,7 +74,11 @@ func (h *mutesHandler) getOrExpire(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *mutesHandler) list(w http.ResponseWriter, r *http.Request) {
-	views, err := alertchain.ListMutes(r.Context(), h.store)
+	filter := alertchain.MuteFilter{Status: alertchain.MutesPresent}
+	if r.URL.Query().Get("status") == "expired" {
+		filter.Status = alertchain.MutesExpired
+	}
+	views, err := alertchain.ListMutes(r.Context(), h.store, filter)
 	if err != nil {
 		http.Error(w, "list: "+err.Error(), http.StatusInternalServerError)
 		return
