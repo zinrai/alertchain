@@ -46,7 +46,8 @@ checked against them.
    equality-only semantics, so each rule is readable at a glance.
 
 2. **State lives in one place.** All persisted state (mutes,
-   notification history) is in a single PostgreSQL database. HA is
+   notification history, observed alerts) is in a single PostgreSQL
+   database. HA is
    delegated to the database layer rather than implemented in the
    application. The database is the source of state, not a thing
    alertchain owns; schema management is delegated to standard
@@ -121,9 +122,13 @@ outweighs the value.
   regex, no alternation. See the next section for the reasoning.
 - **Embedded schema migration.** Use golang-migrate or any tool
   that reads the same file convention.
-- **Listing alerts in the bundled UI.** alertchain holds no alert
-  state; the live "what is firing" view belongs in Prometheus,
-  Grafana, or similar.
+- **Annotations / generatorURL on observed alerts.** alertchain
+  persists labels and timing for routing-relevant queries, not
+  presentation content for downstream destinations. See "Observed
+  alerts" below.
+- **Garbage collection of observed alerts.** Retention is the
+  operator's responsibility; alertchain does not delete alert rows
+  on its own.
 - **Editing routing rules from the UI.** Routing is configuration;
   changes go through the config file and a process restart.
 - **An SPA-style UI.** The bundled UI is server-side rendered HTML
@@ -373,11 +378,74 @@ Prometheus syntax. It is plain label equality, expressed as a YAML
 or JSON map. See "Matchers are equality only, not expressive" above
 for the reasoning.
 
-## Bundled mute UI
+## Observed alerts
 
-alertchain ships a small web UI for administering mutes, served at
-`/ui/` by the same process. Versions of alertchain and the UI move
-together, removing any version-skew concern between the two.
+alertchain persists every alert it observes in the `alerts` table,
+keyed by Alertmanager-compatible fingerprint. The store powers two
+things, and only those two:
+
+- The `/ui/` alerts view (firing and expired tabs).
+- The "currently matching alerts" cross-reference shown under each
+  mute on `/ui/mutes/`, computed via JSONB containment
+  (`labels @> $matchers`).
+
+### What is stored, and what is not
+
+| Field                          | Stored | Reasoning |
+|--------------------------------|--------|-----------|
+| `labels`                       | yes    | Drive mute matching and identify the alert. |
+| `starts_at`, `ends_at`         | yes    | Sender's view; the firing/expired derivation uses `ends_at <= now`. |
+| `first_seen_at`, `last_seen_at`| yes    | alertchain's own observation timestamps. |
+| `annotations`                  | no     | Presentation content for the downstream destination (Slack, PagerDuty). |
+| `generatorURL`                 | no     | Same: belongs in the destination, not the router. |
+
+Annotations and `generatorURL` still reach webhook receivers
+unchanged: they pass through `Alert` from the incoming payload
+directly into the outbound webhook body. They are not persisted
+because the only reason to persist them would be to re-render them
+in the UI, and alertchain does not duplicate the destination
+system's job of presenting alerts to humans.
+
+Alertmanager itself does not persist alerts to disk either; it
+holds them in memory and garbage-collects after `resolve_timeout`.
+alertchain takes the same position on what is presentation-only
+data, and applies it to the persistence layer too.
+
+### No retention policy
+
+The `alerts` table grows monotonically. alertchain does not run a
+background worker to delete old rows; retention is the operator's
+responsibility (`DELETE FROM alerts WHERE last_seen_at < ...` in a
+cron job, partitioning, or whatever fits the deployment). The same
+reasoning as for the `notifications` table applies: a built-in GC
+introduces a timer and a tuning knob that the operator must
+understand, where a plain SQL job in the operator's existing
+scheduler is both more visible and more flexible.
+
+### Lifecycle functions, parallel to mute
+
+Persistence is exposed through package-level lifecycle functions in
+`alert_store.go` (`UpsertAlert`, `ListAlerts`, `GetAlert`,
+`MatchingAlerts`) that wrap an `AlertStore` interface. Presentation
+layers — currently the UI; tomorrow possibly an HTTP endpoint —
+call these instead of touching the store directly. This mirrors the
+mute lifecycle pattern (`CreateMute` / `ListMutes` / `GetMute`) so
+that adding a new presentation layer is a uniform exercise: wire
+the same lifecycle functions, format the result.
+
+`AlertView` carries the derived `Status` field (`"firing"` /
+`"expired"`) so the presentation layer does not recompute it. The
+derivation uses the same closed-interval boundary as the
+notification state machine (`ends_at <= now` is expired), keeping
+the firing-vs-expired decision consistent across mutes, alerts, and
+the notification status.
+
+## Bundled web UI
+
+alertchain ships a small web UI for inspecting observed alerts and
+administering mutes, served at `/ui/` by the same process. Versions
+of alertchain and the UI move together, removing any version-skew
+concern between the two.
 
 The UI is server-side rendered HTML augmented with
 [htmx](https://htmx.org/) (vendored, 1.x). There is no JavaScript
@@ -385,13 +453,40 @@ framework, no build pipeline, and no separate UI binary. All
 templates and static assets are embedded via `//go:embed`; the
 release artefact remains a single Go executable.
 
+### Layout
+
+The UI has two pages:
+
+- `GET /ui/` — observed alerts. Tabs: firing (default) and expired.
+  The firing tab additionally excludes alerts matched by any
+  currently active mute, so the page shows only what needs an
+  operator's attention. Muted alerts remain visible on the mutes
+  page (next bullet), under their mute.
+- `GET /ui/mutes/` — mutes. Default lists present mutes (active +
+  pending); `?status=expired` shows the historical set. For each
+  present mute, the page inlines the firing alerts whose labels
+  currently match (JSONB containment, bounded by the GIN index on
+  `alerts.labels`).
+
+Both pages inline everything an operator needs to act on —
+matchers, audit fields, currently-matching alerts — keeping the
+navigation surface to two URLs plus the new-mute form.
+
+The `/ui/mutes/` page issues one match query per present mute (N+1).
+This is acceptable because the mute count is expected to be in the
+low dozens and each query is bounded by the GIN index. The cap on
+mute count is operational, not enforced.
+
 ### One layer of mute logic
 
 The UI handlers and the HTTP API handlers call the same lifecycle
 functions — `CreateMute`, `ListMutes`, `GetMute` — from `mute.go`.
 Validation, time normalisation, ID generation, and status
 computation live in one place. Both presentation surfaces are
-formatters; neither owns business rules.
+formatters; neither owns business rules. The alert side has the
+same shape (`UpsertAlert` / `ListAlerts` / `GetAlert` /
+`MatchingAlerts` in `alert_store.go`), so adding a presentation
+layer on either side is a uniform exercise.
 
 `Expire` has no shared logic on top of `store.Expire`, so both
 handlers call the store directly for that operation. If post-expire
@@ -438,17 +533,3 @@ well as the UI form. The JSON schema (no `omitempty` on those two
 fields) and the HTML form's `required` attribute both reflect the
 same rule, which is enforced in `validateMuteCreate`. Operators
 familiar with one surface encounter no surprise on the other.
-
-### Slack→UI prefill flow
-
-External adapters such as a Slack notifier may construct a deep
-link to the new-mute form:
-
-```
-/ui/new?match.severity=critical&match.host=web01&comment=Disk%20full
-```
-
-The handler reads `match.*` query parameters into matcher rows and
-populates `comment`. The on-caller adjusts the duration if needed
-and submits. The UI does not need to know which adapter constructed
-the link; an operator typing the URL by hand gets the same prefill.

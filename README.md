@@ -171,25 +171,6 @@ anywhere. Use it for the catch-all final rule and for explicit
 suppression of known-noisy sources. Declaring a user receiver with
 the name `discard` or the type `discard` is an error.
 
-### Reaching destinations other than a generic webhook
-
-For Slack, Email, PagerDuty, MS Teams, or any other destination,
-run a small adapter service and point a webhook receiver at it.
-Examples of adapter strategies:
-
-- **Slack:** Slack's incoming webhooks accept a `{"text": "..."}`
-  JSON body. Run a ~50-line adapter that receives the alertchain
-  payload and POSTs a translated body to the Slack webhook URL.
-- **Email:** Run a small SMTP relay service (in any language) that
-  receives the alertchain payload and sends mail.
-- **PagerDuty:** PagerDuty Events API v2 accepts a JSON body. An
-  adapter translates the alertchain payload to the PagerDuty
-  schema.
-
-This split keeps alertchain itself small and testable, and lets
-each adapter evolve independently. Adapters can be written in any
-language and deployed with any tool.
-
 ### Webhook payload format
 
 Webhook receivers receive an HTTP POST with `Content-Type:
@@ -258,7 +239,7 @@ these clients work against alertchain without modification.
 | Method | Path             | Notes                          |
 |--------|------------------|--------------------------------|
 | POST   | `/api/v2/alerts` | Accept a JSON array of Alertmanager v2 postableAlert objects. |
-| GET    | `/api/v2/alerts` | Returns empty array (alertchain does not cache an active set). |
+| GET    | `/api/v2/alerts` | Returns an empty array, for Alertmanager wire compatibility. The persisted set of observed alerts is exposed through the bundled UI at `/ui/`, not through this endpoint. |
 
 POST returns 500 when a database read fails (mute lookup or history
 lookup). Senders that follow Alertmanager conventions retry on the
@@ -278,7 +259,7 @@ YAML rule `match` field.
 
 | Method | Path                  | Notes                                                   |
 |--------|-----------------------|---------------------------------------------------------|
-| GET    | `/api/v1/mutes`       | List mutes. Returns array including computed `status`.  |
+| GET    | `/api/v1/mutes`       | List mutes. Defaults to present mutes (active + pending). Pass `?status=expired` for the historical set. Each entry carries a computed `status` field. |
 | POST   | `/api/v1/mutes`       | Create a mute. Returns `{"id": "..."}`.                 |
 | GET    | `/api/v1/mutes/{id}`  | Get one mute by id.                                     |
 | DELETE | `/api/v1/mutes/{id}`  | Expire a mute immediately.                              |
@@ -353,24 +334,50 @@ expectation Alertmanager places on its operators.
 
 ## Web UI
 
-alertchain ships a small built-in web UI for administering mutes,
-served at `/ui/` by the same process. The UI is server-side rendered
-HTML augmented with htmx; the release artefact is still a single Go
-executable.
+alertchain ships a small built-in web UI for inspecting observed
+alerts and administering mutes, served at `/ui/` by the same process.
+The UI is server-side rendered HTML augmented with htmx; the release
+artefact is still a single Go executable.
 
-| Path          | Purpose                                        |
-|---------------|------------------------------------------------|
-| `GET /`       | Redirects to `/ui/` when the UI is enabled.    |
-| `GET /ui/`    | List of mutes (active, pending, expired).      |
-| `GET /ui/new` | New-mute form. Query parameters `match.<name>=<value>` and `comment=` prefill the form. |
-| `POST /ui/`   | Form submission; on success, 303 to `/ui/`.    |
-| `GET /ui/{id}`| Detail view of one mute.                       |
-| `POST /ui/{id}/expire` | Expire one mute.                      |
-| `GET /ui/static/...`   | Embedded static assets (htmx, CSS, JS).|
+The UI has two top-level views, both list pages with everything an
+operator needs to act inlined: matchers, audit fields, and (on the
+mutes page) the firing alerts currently matching each mute.
 
-The UI calls the same lifecycle functions as `POST /api/v1/mutes`,
-so validation, status computation, and audit fields stay identical
-between the two surfaces.
+| Path                          | Purpose                                                       |
+|-------------------------------|---------------------------------------------------------------|
+| `GET /`                       | Redirects to `/ui/` when the UI is enabled.                   |
+| `GET /ui/`                    | Observed alerts. Tabs: firing (default) and expired. |
+| `GET /ui/mutes/`              | Mutes list. Default = present (active + pending); `?status=expired` for the historical set. Each present mute inlines the firing alerts currently matching its matchers. |
+| `GET /ui/mutes/new`           | New-mute form. Query parameters `match.<name>=<value>` and `comment=` prefill the form. |
+| `POST /ui/mutes/`             | Form submission; on success, 303 to `/ui/mutes/`.             |
+| `POST /ui/mutes/{id}/expire`  | Expire one mute.                                              |
+| `GET /ui/static/...`          | Embedded static assets (htmx, CSS, JS).                       |
+
+The UI calls the same lifecycle functions as the HTTP API — both
+the mute side (`CreateMute` / `ListMutes` / `GetMute`) and the alert
+side (`ListAlerts` / `MatchingAlerts`) — so validation, status
+computation, and audit fields stay identical between the two
+surfaces.
+
+### Alerts view
+
+The firing tab at `/ui/` lists alerts whose `ends_at` is null or in
+the future, and excludes alerts matched by any currently active
+mute. The intent is "what needs an operator's attention right now":
+muted alerts are not noise on this page; they are visible under
+their respective mute on `/ui/mutes/`.
+
+The expired tab (`/ui/?status=expired`) lists alerts whose `ends_at`
+has passed, without applying the mute filter (the sender has
+resolved them, so suppression is no longer relevant).
+
+alertchain stores only the fields it needs for routing: labels,
+timing, and observation timestamps. Annotations and `generatorURL`
+are not persisted — they pass through into the webhook payload and
+belong on the downstream destination's surface (Slack, PagerDuty,
+etc.), not in alertchain's UI. See
+[DESIGN.md -> Observed alerts](DESIGN.md#observed-alerts) for the
+reasoning.
 
 ### Disabling the UI
 
@@ -379,9 +386,10 @@ ui:
   enabled: false
 ```
 
-When disabled, `/ui/` and `/ui/static/` are not registered and `GET
-/` returns a short text listing of the remaining endpoints. The
-HTTP API at `/api/v1/mutes` is unaffected.
+When disabled, `/ui/`, `/ui/mutes/`, and `/ui/static/` are not
+registered and `GET /` returns a short text listing of the remaining
+endpoints. The HTTP API at `/api/v1/mutes` and `/api/v2/alerts` is
+unaffected.
 
 ### `X-Auth-User` and the "Created by" field
 
@@ -402,7 +410,13 @@ disable header lookup entirely, set `ui.user_header: ""`.
 PostgreSQL is the only supported backend. SQLite and other embedded
 databases are intentionally unsupported, and so is in-process
 clustering — both are delegated to the database layer. See
-[Database setup](#database-setup) for schema management.
+[Database setup](#database-setup) for schema management; the schema
+itself lives in `migrations/`.
+
+alertchain does not garbage-collect historical data. Retention of
+observed alerts and notification history is the operator's
+responsibility — a periodic `DELETE` job, partitioning, or whatever
+fits the deployment.
 
 ## Routing verification
 
