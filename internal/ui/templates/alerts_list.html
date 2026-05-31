@@ -1,0 +1,43 @@
+{{define "title"}}{{if eq .Status "expired"}}Expired{{else}}Firing{{end}} alerts — alertchain{{end}}
+{{define "content"}}
+<div class="status-tabs">
+  <a href="/ui/?status=firing"{{if ne .Status "expired"}} class="active"{{end}}>Firing</a>
+  <a href="/ui/?status=expired"{{if eq .Status "expired"}} class="active"{{end}}>Expired</a>
+</div>
+
+{{if .Alerts}}
+<table class="alert-list">
+<thead>
+<tr>
+  <th class="col-status">Status</th>
+  <th class="col-content">Labels</th>
+  <th class="col-times">Timing (UTC)</th>
+  <th class="col-fp">Fingerprint</th>
+</tr>
+</thead>
+<tbody>
+{{range .Alerts}}
+<tr class="status-{{.Status}}">
+  <td class="col-status"><span class="badge badge-{{.Status}}">{{.Status}}</span></td>
+  <td class="col-content">
+    <div class="cell-labels">
+      {{range $k, $v := .Labels}}<span class="matcher">{{$k}}={{$v}}</span> {{end}}
+    </div>
+  </td>
+  <td class="col-times">
+    <div><span class="tlabel">last seen</span> <code>{{.LastSeenAt.UTC.Format "2006-01-02 15:04:05"}}</code></div>
+    <div><span class="tlabel">first seen</span> <code>{{.FirstSeenAt.UTC.Format "2006-01-02 15:04:05"}}</code></div>
+    <div><span class="tlabel">started</span> <code>{{.StartsAt.UTC.Format "2006-01-02 15:04:05"}}</code></div>
+    {{if not .EndsAt.IsZero}}<div><span class="tlabel">ended</span> <code>{{.EndsAt.UTC.Format "2006-01-02 15:04:05"}}</code></div>{{end}}
+  </td>
+  <td class="col-fp">
+    <code class="fp">{{.Fingerprint}}</code>
+  </td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p class="empty">No {{if eq .Status "expired"}}expired{{else}}firing{{end}} alerts.</p>
+{{end}}
+{{end}}

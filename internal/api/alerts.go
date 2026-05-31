@@ -1,8 +1,8 @@
-// api_alerts.go implements the /api/v2/alerts endpoints.
+// alerts.go implements the /api/v2/alerts endpoint.
 //
 // Endpoints intentionally not implemented: alertgroups, receivers,
 // status.
-package main
+package api
 
 import (
 	"encoding/json"
@@ -11,14 +11,16 @@ import (
 	"net/http"
 
 	ammodels "github.com/prometheus/alertmanager/api/v2/models"
+
+	"github.com/zinrai/alertchain/internal/alertchain"
 )
 
 type alertsHandler struct {
-	chain  *Chain
+	chain  *alertchain.Chain
 	logger *slog.Logger
 }
 
-func newAlertsHandler(chain *Chain, logger *slog.Logger) *alertsHandler {
+func newAlertsHandler(chain *alertchain.Chain, logger *slog.Logger) *alertsHandler {
 	return &alertsHandler{chain: chain, logger: logger}
 }
 
@@ -51,8 +53,8 @@ func (h *alertsHandler) post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, p := range postable {
-		alert := alertFromPostable(p)
-		h.chain.Metrics.incAlertsReceived()
+		alert := alertchain.AlertFromPostable(p)
+		h.chain.Metrics.IncAlertsReceived()
 		if err := h.chain.Process(r.Context(), alert); err != nil {
 			h.logger.Error("process alert failed",
 				"fingerprint", alert.Fingerprint(), "err", err)

@@ -1,4 +1,4 @@
-package main
+package alertchain
 
 import (
 	"context"
@@ -11,10 +11,10 @@ import (
 )
 
 func TestMatchAllEmptyMatchesAnything(t *testing.T) {
-	if !matchAll(nil, map[string]string{"any": "value"}) {
+	if !MatchAll(nil, map[string]string{"any": "value"}) {
 		t.Errorf("nil conditions should match anything")
 	}
-	if !matchAll(map[string]string{}, map[string]string{"any": "value"}) {
+	if !MatchAll(map[string]string{}, map[string]string{"any": "value"}) {
 		t.Errorf("empty conditions should match anything")
 	}
 }
@@ -22,13 +22,13 @@ func TestMatchAllEmptyMatchesAnything(t *testing.T) {
 func TestMatchAllAllEntriesMustEqual(t *testing.T) {
 	conds := map[string]string{"severity": "critical", "team": "infra"}
 
-	if !matchAll(conds, map[string]string{"severity": "critical", "team": "infra", "extra": "x"}) {
+	if !MatchAll(conds, map[string]string{"severity": "critical", "team": "infra", "extra": "x"}) {
 		t.Errorf("alert with all required labels plus extras should match")
 	}
-	if matchAll(conds, map[string]string{"severity": "critical", "team": "platform"}) {
+	if MatchAll(conds, map[string]string{"severity": "critical", "team": "platform"}) {
 		t.Errorf("differing team should not match")
 	}
-	if matchAll(conds, map[string]string{"severity": "critical"}) {
+	if MatchAll(conds, map[string]string{"severity": "critical"}) {
 		t.Errorf("missing team should not match (empty string != \"infra\")")
 	}
 }
@@ -147,7 +147,9 @@ type fakeMutes struct {
 func (f *fakeMutes) Matches(ctx context.Context, a *Alert) (bool, error) {
 	return f.muted, f.err
 }
-func (f *fakeMutes) List(ctx context.Context) ([]*Mute, error)         { return nil, nil }
+func (f *fakeMutes) List(ctx context.Context, _ MuteFilter) ([]*Mute, error) {
+	return nil, nil
+}
 func (f *fakeMutes) Get(ctx context.Context, id string) (*Mute, error) { return nil, nil }
 func (f *fakeMutes) Create(ctx context.Context, m *Mute) error         { return nil }
 func (f *fakeMutes) Expire(ctx context.Context, id string) error       { return nil }

@@ -1,4 +1,4 @@
-package main
+package api
 
 // server_test.go exercises the HTTP server end-to-end against a real
 // PostgreSQL instance. These tests build the same ServeMux that
@@ -15,7 +15,8 @@ package main
 // serialization guarantees.
 //
 // Setup: set DATABASE_URL to a PostgreSQL instance with migrations
-// already applied. Tests skip when DATABASE_URL is unset.
+// already applied. Tests skip when DATABASE_URL is unset. Suite-level
+// DB lifecycle (advisory lock + TRUNCATE) is in main_test.go.
 
 import (
 	"bytes"
@@ -34,6 +35,9 @@ import (
 
 	"github.com/go-openapi/strfmt"
 	ammodels "github.com/prometheus/alertmanager/api/v2/models"
+
+	"github.com/zinrai/alertchain/internal/alertchain"
+	"github.com/zinrai/alertchain/internal/store"
 )
 
 // receiverProbe is a fake webhook destination that counts and records
@@ -64,54 +68,54 @@ func (p *receiverProbe) Close()      { p.server.Close() }
 // against.
 type serverHarness struct {
 	t     *testing.T
-	store *Store
-	chain *Chain
+	store *store.Store
+	chain *alertchain.Chain
 	srv   *httptest.Server
 	URL   string
 }
 
-func newServerHarness(t *testing.T, receivers map[string]*Receiver, rules []*Rule) *serverHarness {
+func newServerHarness(t *testing.T, receivers map[string]*alertchain.Receiver, rules []*alertchain.Rule) *serverHarness {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}
 
-	store, err := OpenStore(context.Background(), dsn)
+	db, err := store.OpenStore(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)
 	}
-	cleanTables(t, store)
 
 	// Ensure the built-in discard receiver is present, the way
 	// LoadConfig would inject it. Tests construct Receiver maps
 	// directly without going through LoadConfig, so this helper
 	// performs the same injection step.
-	if _, ok := receivers[BuiltinDiscardReceiver]; !ok {
-		receivers[BuiltinDiscardReceiver] = &Receiver{
-			Name: BuiltinDiscardReceiver,
+	if _, ok := receivers[alertchain.BuiltinDiscardReceiver]; !ok {
+		receivers[alertchain.BuiltinDiscardReceiver] = &alertchain.Receiver{
+			Name: alertchain.BuiltinDiscardReceiver,
 			Type: "discard",
 		}
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	metrics := NewMetrics()
+	metrics := alertchain.NewMetrics()
 
-	chain := &Chain{
+	chain := &alertchain.Chain{
 		Receivers: receivers,
 		Rules:     rules,
-		Mutes:     store,
-		History:   store,
-		Notifier:  NewHTTPNotifier(),
+		Mutes:     db,
+		History:   db,
+		Alerts:    db,
+		Notifier:  alertchain.NewHTTPNotifier(),
 		Logger:    logger,
 		Metrics:   metrics,
 	}
 
-	srv := httptest.NewServer(newServeMux(chain, store, metrics, logger))
+	srv := httptest.NewServer(NewServeMux(chain, db, metrics, logger))
 
 	h := &serverHarness{
 		t:     t,
-		store: store,
+		store: db,
 		chain: chain,
 		srv:   srv,
 		URL:   srv.URL,
@@ -123,14 +127,6 @@ func newServerHarness(t *testing.T, receivers map[string]*Receiver, rules []*Rul
 func (h *serverHarness) close() {
 	h.srv.Close()
 	h.store.Close()
-}
-
-func cleanTables(t *testing.T, store *Store) {
-	t.Helper()
-	ctx := context.Background()
-	if _, err := store.db.ExecContext(ctx, `TRUNCATE TABLE mutes, notifications`); err != nil {
-		t.Fatalf("clean tables: %v", err)
-	}
 }
 
 // postAlert sends a single PostableAlert to /api/v2/alerts and asserts
@@ -208,10 +204,10 @@ func TestServerDistinctAlertsAllDelivered(t *testing.T) {
 	probe := newReceiverProbe()
 	defer probe.Close()
 
-	receivers := map[string]*Receiver{
+	receivers := map[string]*alertchain.Receiver{
 		"main": {Name: "main", Type: "webhook", URL: probe.URL},
 	}
-	rules := []*Rule{
+	rules := []*alertchain.Rule{
 		{
 			Name:     "all",
 			Match:    nil, // catch-all
@@ -252,10 +248,10 @@ func TestServerSameAlertConcurrent(t *testing.T) {
 	probe := newReceiverProbe()
 	defer probe.Close()
 
-	receivers := map[string]*Receiver{
+	receivers := map[string]*alertchain.Receiver{
 		"main": {Name: "main", Type: "webhook", URL: probe.URL},
 	}
-	rules := []*Rule{
+	rules := []*alertchain.Rule{
 		{Name: "all", Match: nil, Receiver: "main"},
 	}
 	h := newServerHarness(t, receivers, rules)
@@ -297,11 +293,11 @@ func TestServerFanoutToMultipleReceivers(t *testing.T) {
 	defer probeA.Close()
 	defer probeB.Close()
 
-	receivers := map[string]*Receiver{
+	receivers := map[string]*alertchain.Receiver{
 		"recvA": {Name: "recvA", Type: "webhook", URL: probeA.URL},
 		"recvB": {Name: "recvB", Type: "webhook", URL: probeB.URL},
 	}
-	rules := []*Rule{
+	rules := []*alertchain.Rule{
 		{
 			Name:     "to-a",
 			Match:    map[string]string{"severity": "critical"},
@@ -343,10 +339,10 @@ func TestServerMuteTakesEffect(t *testing.T) {
 	probe := newReceiverProbe()
 	defer probe.Close()
 
-	receivers := map[string]*Receiver{
+	receivers := map[string]*alertchain.Receiver{
 		"main": {Name: "main", Type: "webhook", URL: probe.URL},
 	}
-	rules := []*Rule{
+	rules := []*alertchain.Rule{
 		{Name: "all", Match: nil, Receiver: "main"},
 	}
 	h := newServerHarness(t, receivers, rules)
@@ -392,10 +388,10 @@ func TestServerCatchAllAndOrdering(t *testing.T) {
 	probe := newReceiverProbe()
 	defer probe.Close()
 
-	receivers := map[string]*Receiver{
+	receivers := map[string]*alertchain.Receiver{
 		"main": {Name: "main", Type: "webhook", URL: probe.URL},
 	}
-	rules := []*Rule{
+	rules := []*alertchain.Rule{
 		{
 			Name:     "critical-only",
 			Match:    map[string]string{"severity": "critical"},
@@ -404,7 +400,7 @@ func TestServerCatchAllAndOrdering(t *testing.T) {
 		{
 			Name:     "catch-all-discard",
 			Match:    nil, // catch-all
-			Receiver: BuiltinDiscardReceiver,
+			Receiver: alertchain.BuiltinDiscardReceiver,
 		},
 	}
 	h := newServerHarness(t, receivers, rules)

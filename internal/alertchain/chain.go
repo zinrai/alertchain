@@ -1,5 +1,5 @@
 // chain.go defines the core types and the rule evaluation loop.
-package main
+package alertchain
 
 import (
 	"context"
@@ -20,10 +20,10 @@ const BuiltinDiscardReceiver = "discard"
 // (the two timeouts have different cancellation semantics).
 const notifyTimeout = 10 * time.Second
 
-// matchAll reports whether every (name, want) entry in conditions
+// MatchAll reports whether every (name, want) entry in conditions
 // equals the corresponding entry in labels. An empty conditions map
 // matches anything (catch-all).
-func matchAll(conditions, labels map[string]string) bool {
+func MatchAll(conditions, labels map[string]string) bool {
 	for name, want := range conditions {
 		if labels[name] != want {
 			return false
@@ -79,12 +79,14 @@ type Decision struct {
 }
 
 // Chain is the top-level evaluation engine. It holds the rules, the
-// receivers map, the mute store, and the notification history store.
+// receivers map, the mute store, the notification history store, and
+// the alert observability store.
 type Chain struct {
 	Rules     []*Rule
 	Receivers map[string]*Receiver
 	Mutes     MuteStore
 	History   NotificationHistory
+	Alerts    AlertStore // optional; nil skips observability writes
 	Notifier  Notifier
 	Logger    *slog.Logger
 	Metrics   *Metrics // optional; nil disables counter updates
@@ -95,7 +97,7 @@ type Chain struct {
 func (c *Chain) Evaluate(alert *Alert) []Decision {
 	var decisions []Decision
 	for _, r := range c.Rules {
-		if !matchAll(r.Match, alert.Labels) {
+		if !MatchAll(r.Match, alert.Labels) {
 			continue
 		}
 		decisions = append(decisions, Decision{Rule: r, Alert: alert})
@@ -114,9 +116,20 @@ func (c *Chain) Evaluate(alert *Alert) []Decision {
 // Webhook delivery failures and history-write failures are recorded
 // and/or logged but never surface as an error from Process.
 func (c *Chain) Process(ctx context.Context, alert *Alert) error {
+	// Observability: record the alert in the alerts table so the UI
+	// can show what alertchain has seen. Failure here is logged but
+	// does not abort Process; dedup and notification are the critical
+	// path, observability is best-effort.
+	if c.Alerts != nil {
+		if err := c.Alerts.UpsertAlert(ctx, alert, time.Now().UTC()); err != nil {
+			c.Logger.Error("upsert alert failed",
+				"fingerprint", alert.Fingerprint(), "err", err)
+		}
+	}
+
 	muted, err := c.Mutes.Matches(ctx, alert)
 	if err != nil {
-		c.Metrics.incMuteLookupFailure()
+		c.Metrics.IncMuteLookupFailure()
 		return fmt.Errorf("mute check: %w", err)
 	}
 	if muted {
@@ -148,7 +161,7 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 
 		prevStatus, ok, err := c.History.LastAttempt(ctx, d.Rule.Name, fp)
 		if err != nil {
-			c.Metrics.incHistoryLookupFailure()
+			c.Metrics.IncHistoryLookupFailure()
 			return fmt.Errorf("history lookup (rule=%s): %w", d.Rule.Name, err)
 		}
 		if ok && prevStatus == desired {
@@ -165,10 +178,10 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 		if notifyErr != nil {
 			c.Logger.Error("notification failed",
 				"rule", d.Rule.Name, "receiver", recv.Name, "err", notifyErr)
-			c.Metrics.incNotifyFailure()
+			c.Metrics.IncNotifyFailure()
 			status = desired.Failed()
 		} else {
-			c.Metrics.incNotifySuccess()
+			c.Metrics.IncNotifySuccess()
 		}
 
 		// RecordAttempt failure does not propagate: the webhook
@@ -177,7 +190,7 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 		if err := c.History.RecordAttempt(ctx, d.Rule.Name, fp, now, status); err != nil {
 			c.Logger.Error("history write failed",
 				"rule", d.Rule.Name, "err", err)
-			c.Metrics.incHistoryWriteFailure()
+			c.Metrics.IncHistoryWriteFailure()
 		}
 	}
 	return nil

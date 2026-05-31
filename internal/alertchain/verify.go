@@ -3,7 +3,7 @@
 //
 // Scope: routing only. Mutes are runtime state and out of scope here;
 // use `alertchain trace` for mute questions.
-package main
+package alertchain
 
 import (
 	"fmt"

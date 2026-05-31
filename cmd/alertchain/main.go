@@ -6,6 +6,8 @@
 //	serve   run the HTTP server and process alerts
 //	trace   read an alert from a JSON file and trace its evaluation
 //	check   validate the configuration file
+//	verify  verify routing behavior against a YAML case table
+//	version print build version
 //
 // See README.md for the configuration file format and design notes.
 package main
@@ -20,10 +22,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/zinrai/alertchain/internal/alertchain"
+	"github.com/zinrai/alertchain/internal/api"
+	"github.com/zinrai/alertchain/internal/store"
+	"github.com/zinrai/alertchain/internal/ui"
 )
 
-// newFlagSet returns a FlagSet that exits with code 2 on parse errors
-// (matching the stdlib default) and writes errors to stderr.
 func newFlagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -80,7 +85,6 @@ Run "alertchain <subcommand> -h" for subcommand-specific flags.
 `)
 }
 
-// parseConfigFlag is shared by all subcommands that need the config path.
 func parseConfigFlag(args []string, sub string) (string, []string, error) {
 	fs := newFlagSet(sub)
 	var config string
@@ -110,25 +114,32 @@ func cmdServe(args []string) error {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
-	chain, err := LoadConfig(config)
+	cfg, err := alertchain.LoadConfig(config)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	store, err := openStoreWithTimeout(dsn)
+	chain := cfg.Chain
+	db, err := openStoreWithTimeout(dsn)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
-	defer store.Close()
+	defer db.Close()
 
-	metrics := NewMetrics()
+	metrics := alertchain.NewMetrics()
 
-	chain.Mutes = store
-	chain.History = store
-	chain.Notifier = NewHTTPNotifier()
+	chain.Mutes = db
+	chain.History = db
+	chain.Alerts = db
+	chain.Notifier = alertchain.NewHTTPNotifier()
 	chain.Logger = logger
 	chain.Metrics = metrics
 
-	mux := newServeMux(chain, store, metrics, logger)
+	mux := api.NewServeMux(chain, db, metrics, logger)
+	if cfg.UI.Enabled {
+		ui.Mount(mux, db, logger, cfg.UI)
+	} else {
+		mux.HandleFunc("GET /{$}", noUIRootHandler)
+	}
 
 	srv := &http.Server{
 		Addr:              listen,
@@ -160,6 +171,19 @@ func cmdServe(args []string) error {
 	}
 }
 
+// noUIRootHandler responds at "/" when the UI is disabled, listing the
+// remaining HTTP endpoints in plain text.
+func noUIRootHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintln(w, "alertchain")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Endpoints:")
+	fmt.Fprintln(w, "  POST /api/v2/alerts")
+	fmt.Fprintln(w, "  GET/POST /api/v1/mutes  GET/DELETE /api/v1/mutes/{id}")
+	fmt.Fprintln(w, "  GET /metrics")
+	fmt.Fprintln(w, "  GET /-/healthy  GET /-/ready")
+}
+
 func cmdTrace(args []string) error {
 	fs := newFlagSet("trace")
 	var (
@@ -174,15 +198,15 @@ func cmdTrace(args []string) error {
 	if alertFile == "" {
 		return fmt.Errorf("--alert-file is required")
 	}
-	chain, err := LoadConfig(config)
+	cfg, err := alertchain.LoadConfig(config)
 	if err != nil {
 		return err
 	}
-	alert, err := LoadAlertFromFile(alertFile)
+	alert, err := alertchain.LoadAlertFromFile(alertFile)
 	if err != nil {
 		return err
 	}
-	return Trace(context.Background(), chain, nil, alert, os.Stdout)
+	return alertchain.Trace(context.Background(), cfg.Chain, nil, alert, os.Stdout)
 }
 
 func cmdCheck(args []string) error {
@@ -190,11 +214,11 @@ func cmdCheck(args []string) error {
 	if err != nil {
 		return err
 	}
-	chain, err := LoadConfig(config)
+	cfg, err := alertchain.LoadConfig(config)
 	if err != nil {
 		return err
 	}
-	return Check(chain, os.Stdout)
+	return alertchain.Check(cfg.Chain, os.Stdout)
 }
 
 // cmdVerify runs a YAML table of routing expectations against the
@@ -214,23 +238,23 @@ func cmdVerify(args []string) error {
 	if cases == "" {
 		return fmt.Errorf("--verify-cases is required")
 	}
-	chain, err := LoadConfig(config)
+	cfg, err := alertchain.LoadConfig(config)
 	if err != nil {
 		return err
 	}
-	cs, err := LoadVerifyCases(cases)
+	cs, err := alertchain.LoadVerifyCases(cases)
 	if err != nil {
 		return err
 	}
-	if !Verify(chain, cs, os.Stdout) {
+	if !alertchain.Verify(cfg.Chain, cs, os.Stdout) {
 		return fmt.Errorf("one or more verify cases failed")
 	}
 	return nil
 }
 
-// openStoreWithTimeout wraps OpenStore with a startup-time deadline.
-func openStoreWithTimeout(dsn string) (*Store, error) {
+// openStoreWithTimeout wraps store.OpenStore with a startup-time deadline.
+func openStoreWithTimeout(dsn string) (*store.Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return OpenStore(ctx, dsn)
+	return store.OpenStore(ctx, dsn)
 }

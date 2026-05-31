@@ -1,5 +1,5 @@
 // config.go parses the alertchain YAML file into a *Chain.
-package main
+package alertchain
 
 import (
 	"fmt"
@@ -12,6 +12,7 @@ import (
 type configFile struct {
 	Receivers []configReceiver `yaml:"receivers"`
 	Rules     []configRule     `yaml:"rules"`
+	UI        *configUI        `yaml:"ui,omitempty"`
 }
 
 type configReceiver struct {
@@ -29,11 +30,31 @@ type configRule struct {
 	Continue bool              `yaml:"continue,omitempty"`
 }
 
-// LoadConfig reads a YAML file and returns a fully populated *Chain.
-// External dependencies (mute store, history, notifier, logger,
-// metrics) are left nil; the caller is expected to set them before
-// calling Process.
-func LoadConfig(path string) (*Chain, error) {
+// configUI uses pointers so absent fields can be distinguished from
+// explicit zero values (default kicks in for the absent case only).
+type configUI struct {
+	Enabled    *bool   `yaml:"enabled,omitempty"`
+	UserHeader *string `yaml:"user_header,omitempty"`
+}
+
+// UIConfig is the resolved UI configuration (post-defaults). Consumed
+// by newServeMux and the UI handlers.
+type UIConfig struct {
+	Enabled    bool   // default true
+	UserHeader string // default "X-Auth-User"; empty means no header lookup
+}
+
+// Config bundles everything LoadConfig produces.
+type Config struct {
+	Chain *Chain
+	UI    UIConfig
+}
+
+// LoadConfig reads a YAML file and returns a fully populated *Config.
+// External dependencies on the chain (mute store, history, notifier,
+// logger, metrics) are left nil; the caller is expected to set them
+// before calling Process.
+func LoadConfig(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -95,7 +116,21 @@ func LoadConfig(path string) (*Chain, error) {
 	if err := chain.Validate(); err != nil {
 		return nil, err
 	}
-	return chain, nil
+
+	ui := UIConfig{
+		Enabled:    true,
+		UserHeader: "X-Auth-User",
+	}
+	if cf.UI != nil {
+		if cf.UI.Enabled != nil {
+			ui.Enabled = *cf.UI.Enabled
+		}
+		if cf.UI.UserHeader != nil {
+			ui.UserHeader = *cf.UI.UserHeader
+		}
+	}
+
+	return &Config{Chain: chain, UI: ui}, nil
 }
 
 // resolveFileFields reads *_file fields and populates the corresponding

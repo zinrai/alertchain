@@ -1,0 +1,68 @@
+{{define "title"}}{{if eq .Status "expired"}}Expired{{else}}Active{{end}} mutes — alertchain{{end}}
+{{define "content"}}
+<div class="toolbar">
+  <a href="/ui/mutes/new" class="button button-primary">New mute</a>
+</div>
+
+<div class="status-tabs">
+  <a href="/ui/mutes/"{{if ne .Status "expired"}} class="active"{{end}}>Active &amp; pending</a>
+  <a href="/ui/mutes/?status=expired"{{if eq .Status "expired"}} class="active"{{end}}>Expired</a>
+</div>
+
+{{if .Entries}}
+<div class="mute-cards">
+{{range .Entries}}
+<article id="mute-{{.Mute.ID}}" class="mute-card status-{{.Mute.Status}}">
+  <header class="mute-card-head">
+    <div class="mute-card-title">
+      {{range $k, $v := .Mute.Matchers}}<span class="matcher-prominent">{{$k}}={{$v}}</span> {{end}}
+    </div>
+    <div class="mute-card-status-actions">
+      <span class="badge badge-{{.Mute.Status}}">{{.Mute.Status}}</span>
+      {{if ne .Mute.Status "expired"}}
+      <button type="button"
+              hx-post="/ui/mutes/{{.Mute.ID}}/expire"
+              hx-target="#mute-{{.Mute.ID}}"
+              hx-swap="outerHTML"
+              hx-confirm="Expire this mute?">Expire</button>
+      {{end}}
+    </div>
+  </header>
+
+  <div class="mute-card-meta">
+    <span><span class="meta-label">Window</span> <code>{{.Mute.StartsAt.UTC.Format "2006-01-02 15:04"}} → {{.Mute.EndsAt.UTC.Format "2006-01-02 15:04"}} UTC</code></span>
+    <span><span class="meta-label">By</span> <code>{{.Mute.CreatedBy}}</code></span>
+    <span class="mute-card-comment"><span class="meta-label">Comment</span> {{.Mute.Comment}}</span>
+  </div>
+
+  {{if ne .Mute.Status "expired"}}
+  <div class="mute-card-matches">
+    <h4>Matching alerts ({{len .Matches}})</h4>
+    {{if .Matches}}
+    <ul class="match-list">
+    {{range .Matches}}
+      <li class="match-row status-{{.Status}}">
+        <span class="badge badge-{{.Status}}">{{.Status}}</span>
+        <div class="match-row-labels">
+          {{range $k, $v := .Labels}}<span class="matcher">{{$k}}={{$v}}</span> {{end}}
+        </div>
+        <span class="match-row-seen">last seen <code>{{.LastSeenAt.UTC.Format "2006-01-02 15:04:05"}} UTC</code></span>
+      </li>
+    {{end}}
+    </ul>
+    {{else}}
+    <p class="empty-inline">No firing alerts currently match this mute.</p>
+    {{end}}
+  </div>
+  {{end}}
+</article>
+{{end}}
+</div>
+{{else}}
+{{if eq .Status "expired"}}
+<p class="empty">No expired mutes.</p>
+{{else}}
+<p class="empty">No active or pending mutes. <a href="/ui/mutes/new">Create one</a>.</p>
+{{end}}
+{{end}}
+{{end}}

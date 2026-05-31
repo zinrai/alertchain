@@ -1,6 +1,6 @@
 // trace.go implements `alertchain trace`: a one-shot, side-effect-free
 // dry run of the chain against a hypothetical alert.
-package main
+package alertchain
 
 import (
 	"context"
@@ -45,7 +45,7 @@ func Trace(ctx context.Context, c *Chain, muteStore MuteStore,
 		if cond == "" {
 			cond = "(catch-all)"
 		}
-		if !matchAll(r.Match, alert.Labels) {
+		if !MatchAll(r.Match, alert.Labels) {
 			fmt.Fprintf(w, "  %s %-30s skip   %s\n", idx, r.Name, cond)
 			continue
 		}
