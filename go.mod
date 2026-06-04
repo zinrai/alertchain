@@ -6,7 +6,7 @@ require (
 	github.com/go-openapi/strfmt v0.26.2
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/alertmanager v0.32.1
-	github.com/prometheus/common v0.67.5
+	github.com/prometheus/common v0.68.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -38,10 +38,9 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
