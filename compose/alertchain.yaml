@@ -1,0 +1,16 @@
+# alertchain configuration for the Docker Compose stack.
+#
+# Receiver URLs use Compose service names, so they resolve on the
+# Compose network rather than on localhost. Every rule routes to a
+# real receiver; the log-sink service (http-request-capture) accepts
+# the webhook and logs it, so a posted alert is observable end to end
+# with "docker compose logs log-sink".
+receivers:
+  - name: log-sink
+    type: webhook
+    url: http://log-sink:8000
+
+rules:
+  - name: catch-all
+    match: {}
+    receiver: log-sink

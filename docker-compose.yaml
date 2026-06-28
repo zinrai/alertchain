@@ -1,0 +1,63 @@
+name: alertchain
+
+services:
+  db:
+    image: postgres:18.4-trixie
+    environment:
+      POSTGRES_USER: alertchain
+      POSTGRES_PASSWORD: alertchain
+      POSTGRES_DB: alertchain
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alertchain -d alertchain"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # Applies migrations/ against the database, then exits. alertchain
+  # waits for this to complete successfully before it starts, so the
+  # schema check in OpenStore always finds the tables present.
+  migrate:
+    image: migrate/migrate:v4.19.1
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://alertchain:alertchain@db:5432/alertchain?sslmode=disable
+      - up
+    restart: "no"
+
+  alertchain:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: alertchain:dev
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://alertchain:alertchain@db:5432/alertchain?sslmode=disable
+    volumes:
+      - ./compose/alertchain.yaml:/etc/alertchain/alertchain.yaml:ro
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+
+  # Low-priority sink: accepts the webhook and logs the request. Stand
+  # in for a real downstream so routed alerts are visible in the logs.
+  # https://github.com/zinrai/http-request-capture
+  log-sink:
+    image: ghcr.io/zinrai/http-request-capture:0.3.0
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+volumes:
+  db-data:
