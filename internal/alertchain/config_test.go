@@ -34,7 +34,7 @@ rules:
     continue: true
   - name: catch
     match: {}
-    receiver: discard
+    receiver: webhook
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -60,7 +60,7 @@ rules:
 	if len(r1.Match) != 0 {
 		t.Errorf("rule 1 should be catch-all, got %v", r1.Match)
 	}
-	if r1.Receiver != "discard" {
+	if r1.Receiver != "webhook" {
 		t.Errorf("rule 1 receiver: got %q", r1.Receiver)
 	}
 }
@@ -74,7 +74,7 @@ receivers:
 
 rules:
   - name: catch
-    receiver: discard
+    receiver: w
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -86,34 +86,18 @@ rules:
 	}
 }
 
-func TestLoadConfigRejectsReservedReceiverName(t *testing.T) {
+func TestLoadConfigRejectsUnknownReceiverType(t *testing.T) {
 	path := writeTempYAML(t, `
 receivers:
-  - name: discard
-    type: webhook
-    url: http://x
+  - name: my-sink
+    type: blackhole
 
 rules:
   - name: r
-    receiver: discard
+    receiver: my-sink
 `)
 	if _, err := LoadConfig(path); err == nil {
-		t.Errorf("expected error when receiver name is the reserved 'discard'")
-	}
-}
-
-func TestLoadConfigRejectsReservedReceiverType(t *testing.T) {
-	path := writeTempYAML(t, `
-receivers:
-  - name: my-discard
-    type: discard
-
-rules:
-  - name: r
-    receiver: my-discard
-`)
-	if _, err := LoadConfig(path); err == nil {
-		t.Errorf("expected error when user declares type=discard")
+		t.Errorf("expected error when receiver type is unknown")
 	}
 }
 
@@ -145,30 +129,6 @@ rules:
 `)
 	if _, err := LoadConfig(path); err == nil {
 		t.Errorf("expected error when rule references undefined receiver")
-	}
-}
-
-func TestLoadConfigBuiltinDiscardAlwaysAvailable(t *testing.T) {
-	path := writeTempYAML(t, `
-receivers:
-  - name: w
-    type: webhook
-    url: http://x
-
-rules:
-  - name: drop-noisy
-    match:
-      source: noisy
-    receiver: discard
-`)
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("LoadConfig: %v", err)
-	}
-	chain := cfg.Chain
-	r := chain.Receivers["discard"]
-	if r == nil || r.Type != "discard" {
-		t.Errorf("built-in discard receiver should be present, got %+v", r)
 	}
 }
 
@@ -227,7 +187,7 @@ receivers:
 
 rules:
   - name: catch
-    receiver: discard
+    receiver: w
 `)
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -250,7 +210,7 @@ receivers:
 
 rules:
   - name: catch
-    receiver: discard
+    receiver: w
 
 ui:
   enabled: false
@@ -273,7 +233,7 @@ receivers:
 
 rules:
   - name: catch
-    receiver: discard
+    receiver: w
 
 ui:
   user_header: X-Forwarded-User

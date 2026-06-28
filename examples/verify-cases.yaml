@@ -33,17 +33,17 @@ verify:
       rules: [chaos-fail]
       receivers: [failing-webhook]
 
-  - name: noisy source explicitly discarded
+  - name: noisy source routed to log sink
     labels:
       source: noisy-system
       severity: warning
     expect:
       rules: [noisy-suppress]
-      receivers: [discard]
+      receivers: [log-sink]
 
-  - name: unmatched alert falls through to catch-all discard
+  - name: unmatched alert falls through to catch-all log sink
     labels:
       alertname: SomethingUnknown
     expect:
-      rules: [catch-all-discard]
-      receivers: [discard]
+      rules: [catch-all]
+      receivers: [log-sink]

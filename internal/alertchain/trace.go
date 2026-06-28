@@ -77,11 +77,7 @@ func Trace(ctx context.Context, c *Chain, muteStore MuteStore,
 		if recv != nil {
 			typ = recv.Type
 		}
-		marker := "-> notify"
-		if typ == "discard" {
-			marker = "-> discard"
-		}
-		fmt.Fprintf(w, "  %s  (rule: %s, type: %s)\n", marker, r.Name, typ)
+		fmt.Fprintf(w, "  -> notify  (rule: %s, type: %s)\n", r.Name, typ)
 	}
 	return nil
 }

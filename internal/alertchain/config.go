@@ -72,12 +72,6 @@ func LoadConfig(path string) (*Config, error) {
 		if cr.Name == "" {
 			return nil, fmt.Errorf("receiver #%d: name is required", i+1)
 		}
-		if cr.Name == BuiltinDiscardReceiver {
-			return nil, fmt.Errorf("receiver %q: name is reserved for the built-in discard receiver; remove this declaration", cr.Name)
-		}
-		if cr.Type == "discard" {
-			return nil, fmt.Errorf("receiver %q: type %q is reserved; the discard receiver is built-in and cannot be declared", cr.Name, cr.Type)
-		}
 		if _, exists := chain.Receivers[cr.Name]; exists {
 			return nil, fmt.Errorf("receiver %q: duplicate name", cr.Name)
 		}
@@ -94,13 +88,6 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("receiver %q: %w", cr.Name, err)
 		}
 		chain.Receivers[cr.Name] = r
-	}
-
-	// Built-in receiver: a rule may target "discard" to drop matching
-	// alerts.
-	chain.Receivers[BuiltinDiscardReceiver] = &Receiver{
-		Name: BuiltinDiscardReceiver,
-		Type: "discard",
 	}
 
 	for _, cr := range cf.Rules {
@@ -146,10 +133,7 @@ func (r *Receiver) resolveFileFields() error {
 	return nil
 }
 
-// validate checks the type-specific required fields. The "discard"
-// type is intentionally not handled here: users cannot declare it (it
-// is rejected at LoadConfig), so reaching this function with that type
-// is impossible.
+// validate checks the type-specific required fields.
 func (r *Receiver) validate() error {
 	switch r.Type {
 	case "":

@@ -18,6 +18,13 @@ receivers:
     type: webhook
     url: http://127.0.0.1:9999
 
+  # Low-priority sink: an app that accepts the webhook and only logs
+  # it. Low-value and unmatched alerts route here instead of being
+  # dropped, so the delivery path stays observable.
+  - name: log-sink
+    type: webhook
+    url: http://127.0.0.1:8000
+
 rules:
   - name: critical-to-infra
     match:
@@ -45,8 +52,8 @@ rules:
   - name: noisy-suppress
     match:
       source: noisy-system
-    receiver: discard
+    receiver: log-sink
 
-  - name: catch-all-discard
+  - name: catch-all
     match: {}
-    receiver: discard
+    receiver: log-sink

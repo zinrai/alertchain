@@ -6,13 +6,14 @@ operational verification; doubles as a starter set for new users.
 
 ## Files
 
-- `alertchain.yaml` — chain with four receivers (three success, one
-  intentionally failing) and six rules covering: critical fan-out via
-  `continue: true`, severity routing, label-based suppression, and a
-  final catch-all discard.
-- `verify-cases.yaml` — routing expectations matching `alertchain.yaml`.
+- `alertchain.yaml`: chain with five receivers (three success, one
+  intentionally failing, one low-priority log sink) and six rules
+  covering: critical fan-out via `continue: true`, severity routing,
+  routing low-value sources to the log sink, and a final catch-all to
+  the log sink.
+- `verify-cases.yaml`: routing expectations matching `alertchain.yaml`.
   Drives `alertchain verify`.
-- `alerts/*.json` — one alert per file in the alertchain `Alert`
+- `alerts/*.json`: one alert per file in the alertchain `Alert`
   shape. Use directly with `alertchain trace`, or wrap in an array
   (`jq '[.]'`) to POST to `/api/v2/alerts`.
 
@@ -23,15 +24,15 @@ operational verification; doubles as a starter set for new users.
 | `alerts/critical-infra.json` | `severity=critical, team=infra` | `critical-to-infra` + `critical-mirror` (continue) |
 | `alerts/critical-platform.json` | `severity=critical, team=platform` | `critical-mirror` only |
 | `alerts/infra-warning.json` | `severity=warning, team=infra` | `infra-warnings` |
-| `alerts/noisy-suppress.json` | `source=noisy-system` | `discard` (explicit) |
-| `alerts/catchall.json` | nothing matched above | `catch-all-discard` |
+| `alerts/noisy-suppress.json` | `source=noisy-system` | `noisy-suppress` -> `log-sink` |
+| `alerts/catchall.json` | nothing matched above | `catch-all` -> `log-sink` |
 | `alerts/chaos-fail.json` | `chaos=fail` | `failing-webhook` (closed port; exercises the failure path) |
 
 ## End-to-end walkthrough
 
 Prerequisites:
 
-- PostgreSQL reachable, with the `alertchain` schema applied — see
+- PostgreSQL reachable, with the `alertchain` schema applied. See
   `migrations/` in the repository root.
 - A webhook receiver listening at `http://127.0.0.1:8000` that returns
   2xx. Any request-dumping HTTP server works (`python3 -m http.server`
@@ -86,6 +87,6 @@ does not change). Then add `"endsAt": "<past timestamp>"` to the same
 file (or pipe through `jq`) to observe the `firing-sent -> resolved-sent`
 transition.
 
-Send `alerts/chaos-fail.json` to exercise the failure path — the
+Send `alerts/chaos-fail.json` to exercise the failure path. The
 sender still receives HTTP 200, but `notifications` records
 `firing-failed` and `alertchain_notify_failure_total` increments.

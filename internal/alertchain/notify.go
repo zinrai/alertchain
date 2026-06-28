@@ -58,8 +58,6 @@ func (n *HTTPNotifier) Notify(ctx context.Context, recv *Receiver, alert *Alert)
 	switch recv.Type {
 	case "webhook":
 		return n.notifyWebhook(ctx, recv, alert)
-	case "discard":
-		return nil
 	default:
 		return fmt.Errorf("unknown receiver type %q", recv.Type)
 	}

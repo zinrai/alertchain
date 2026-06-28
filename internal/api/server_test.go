@@ -8,7 +8,7 @@ package api
 //
 // The tests verify properties that only emerge when the chain
 // evaluation, the database state machine, and the HTTP layer work
-// together — concurrency safety, mute interaction, fan-out, and
+// together: concurrency safety, mute interaction, fan-out, and
 // catch-all ordering. They use the real DB rather than fakes
 // because the behavior under test is, in part, the interaction
 // between alertchain's Process logic and PostgreSQL's
@@ -63,7 +63,7 @@ func (p *receiverProbe) Hits() int64 { return p.hits.Load() }
 func (p *receiverProbe) Close()      { p.server.Close() }
 
 // serverHarness wires a real PostgreSQL store, an in-process Chain,
-// and an httptest server built from newServeMux — the same function
+// and an httptest server built from newServeMux, the same function
 // production uses. The harness exposes the base URL that tests POST
 // against.
 type serverHarness struct {
@@ -84,17 +84,6 @@ func newServerHarness(t *testing.T, receivers map[string]*alertchain.Receiver, r
 	db, err := store.OpenStore(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)
-	}
-
-	// Ensure the built-in discard receiver is present, the way
-	// LoadConfig would inject it. Tests construct Receiver maps
-	// directly without going through LoadConfig, so this helper
-	// performs the same injection step.
-	if _, ok := receivers[alertchain.BuiltinDiscardReceiver]; !ok {
-		receivers[alertchain.BuiltinDiscardReceiver] = &alertchain.Receiver{
-			Name: alertchain.BuiltinDiscardReceiver,
-			Type: "discard",
-		}
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -374,22 +363,26 @@ func TestServerMuteTakesEffect(t *testing.T) {
 // once:
 //
 //  1. An alert not matching any specific rule reaches the catch-all
-//     and is silently dropped (because the catch-all uses the built-in
-//     discard receiver, not a real webhook).
+//     and is delivered to the catch-all's receiver (here a low-priority
+//     log sink), never lost.
 //  2. An alert matching a specific earlier rule is delivered there
 //     and does not fall through to the catch-all.
 //
-// We verify by counting deliveries to the real receiver: the matching
-// alert must produce exactly one hit, the unmatching alert zero. If
-// rules were evaluated in the wrong order, the catch-all would catch
-// everything and the real receiver would see zero hits (proving the
-// failure mode).
+// We verify by counting deliveries to two receivers: the critical
+// alert must land exactly once on main and never on the sink; the
+// trivial alert must land exactly once on the sink and never on main.
+// If rules were evaluated in the wrong order, the catch-all would
+// catch everything and main would see zero hits (proving the failure
+// mode).
 func TestServerCatchAllAndOrdering(t *testing.T) {
-	probe := newReceiverProbe()
-	defer probe.Close()
+	main := newReceiverProbe()
+	defer main.Close()
+	sink := newReceiverProbe()
+	defer sink.Close()
 
 	receivers := map[string]*alertchain.Receiver{
-		"main": {Name: "main", Type: "webhook", URL: probe.URL},
+		"main":     {Name: "main", Type: "webhook", URL: main.URL},
+		"log-sink": {Name: "log-sink", Type: "webhook", URL: sink.URL},
 	}
 	rules := []*alertchain.Rule{
 		{
@@ -398,25 +391,28 @@ func TestServerCatchAllAndOrdering(t *testing.T) {
 			Receiver: "main",
 		},
 		{
-			Name:     "catch-all-discard",
+			Name:     "catch-all",
 			Match:    nil, // catch-all
-			Receiver: alertchain.BuiltinDiscardReceiver,
+			Receiver: "log-sink",
 		},
 	}
 	h := newServerHarness(t, receivers, rules)
 
-	// Matches first rule -> delivered.
+	// Matches first rule -> delivered to main.
 	postAlert(t, h.URL, map[string]string{
 		"alertname": "Important",
 		"severity":  "critical",
 	})
-	// Matches catch-all -> discarded.
+	// Matches catch-all -> delivered to the log sink.
 	postAlert(t, h.URL, map[string]string{
 		"alertname": "Trivial",
 		"severity":  "debug",
 	})
 
-	if got := probe.Hits(); got != 1 {
-		t.Errorf("expected exactly 1 webhook delivery (critical), got %d", got)
+	if got := main.Hits(); got != 1 {
+		t.Errorf("expected exactly 1 delivery to main (critical), got %d", got)
+	}
+	if got := sink.Hits(); got != 1 {
+		t.Errorf("expected exactly 1 delivery to log sink (trivial), got %d", got)
 	}
 }

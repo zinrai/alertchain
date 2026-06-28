@@ -10,11 +10,6 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// BuiltinDiscardReceiver is the name of the built-in receiver that
-// drops alerts without notifying anywhere. It is always present in
-// Chain.Receivers; users cannot declare a receiver with this name.
-const BuiltinDiscardReceiver = "discard"
-
 // notifyTimeout bounds a single webhook delivery. Applied via
 // context.WithTimeout in Process; do not also set it on http.Client
 // (the two timeouts have different cancellation semantics).
@@ -41,12 +36,10 @@ type Rule struct {
 	Continue bool              // when true, continue evaluating subsequent rules
 }
 
-// Receiver describes how to deliver a notification. The "discard" type
-// is built-in and injected by LoadConfig; users cannot declare a
-// receiver of that type or with that name.
+// Receiver describes how to deliver a notification.
 type Receiver struct {
 	Name    string
-	Type    string // "webhook" | "discard"
+	Type    string // "webhook"
 	URL     string // webhook only
 	URLFile string // webhook only (URL is read from this file at load time)
 }
@@ -153,10 +146,6 @@ func (c *Chain) Process(ctx context.Context, alert *Alert) error {
 				"rule", d.Rule.Name, "receiver", d.Rule.Receiver)
 			continue
 		}
-		if recv.Type == "discard" {
-			continue
-		}
-
 		desired := desiredStatus(alert, now)
 
 		prevStatus, ok, err := c.History.LastAttempt(ctx, d.Rule.Name, fp)

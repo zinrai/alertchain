@@ -61,8 +61,12 @@ receivers:
     type: webhook
     url_file: /etc/alertchain/infra-webhook.url
 
-  # The built-in "discard" receiver is always available. Do not
-  # declare it; reference it directly from rules below.
+  # A low-priority sink: an application that accepts the webhook and
+  # only logs it. Route low-value or out-of-rotation alerts here
+  # instead of dropping them, so the delivery path stays observable.
+  - name: log-sink
+    type: webhook
+    url: http://127.0.0.1:8080/log
 
 rules:
   - name: critical-to-infra
@@ -86,11 +90,11 @@ rules:
   - name: noisy-suppress
     match:
       source: noisy-system
-    receiver: discard
+    receiver: log-sink
 
-  - name: catch-all-discard
+  - name: catch-all
     match: {}
-    receiver: discard
+    receiver: log-sink
 ```
 
 Configuration changes require a process restart. There is no
@@ -115,7 +119,7 @@ Each rule has these fields:
 |------------|----------|---------|---------------------------------------|
 | `name`     | yes      | -       | Unique. Used as key in notification history. |
 | `match`    | no       | `{}`    | Label-to-value equality map. Empty or omitted = catch-all. |
-| `receiver` | yes      | -       | Must reference a defined receiver or the built-in `discard`. |
+| `receiver` | yes      | -       | Must reference a defined receiver. |
 | `continue` | no       | `false` | If true, evaluation proceeds.         |
 
 The `name` field is the key under which notification history is
@@ -127,7 +131,7 @@ delivered again).
 
 `match` is a map from label name to the expected value. **All
 entries must equal the corresponding labels on the alert** for the
-rule to apply (logical AND). Matching is plain equality — there is
+rule to apply (logical AND). Matching is plain equality: there is
 no `!=`, no regex, no alternation.
 
 ```yaml
@@ -157,7 +161,7 @@ the full reasoning.
 
 ### Receivers
 
-Only one configurable type: `webhook`. Plus the built-in `discard`.
+Only one type: `webhook`.
 
 ```yaml
 - name: my-webhook
@@ -165,11 +169,13 @@ Only one configurable type: `webhook`. Plus the built-in `discard`.
   url: https://example.com/hook        # or url_file: /path/to/url
 ```
 
-The built-in `discard` receiver is always available. A rule that
-targets `receiver: discard` drops matching alerts without notifying
-anywhere. Use it for the catch-all final rule and for explicit
-suppression of known-noisy sources. Declaring a user receiver with
-the name `discard` or the type `discard` is an error.
+Every rule routes to a webhook; alertchain does not drop alerts at
+the receiver level. To take a known-noisy source out of paging
+rotation without losing the delivery trail, route it to a
+low-priority receiver (an application that accepts the webhook and
+only logs it), or create a mute for a bounded time window. End the
+chain with a catch-all rule so no alert falls through unrouted; the
+`check` subcommand warns when the last rule is not a catch-all.
 
 ### Webhook payload format
 
@@ -206,8 +212,8 @@ The top-level `status` is `"firing"` when the alert is active,
 per-alert `status` field carries the same value (the payload
 contains a single alert). The per-alert `fingerprint` is computed
 via `model.LabelSet.Fingerprint()` from
-`github.com/prometheus/common/model` — the same algorithm
-Alertmanager uses — so identical label sets produce identical
+`github.com/prometheus/common/model` (the same algorithm
+Alertmanager uses), so identical label sets produce identical
 fingerprints whether the source is alertchain or Alertmanager.
 
 ## Notification semantics in brief
@@ -246,15 +252,15 @@ lookup). Senders that follow Alertmanager conventions retry on the
 next push, which is the intended recovery path.
 
 This is the only path where alertchain mirrors an Alertmanager API.
-Other Alertmanager endpoints — `/api/v2/silences`, `/api/v2/receivers`,
-`/api/v2/alertgroups`, `/api/v2/status` — are deliberately not
+Other Alertmanager endpoints (`/api/v2/silences`, `/api/v2/receivers`,
+`/api/v2/alertgroups`, `/api/v2/status`) are deliberately not
 implemented. Mute is alertchain's own concept (see below) and is
 not an Alertmanager-silence substitute.
 
 ### `/api/v1/mutes`
 
 The mute API is alertchain's own. The matcher payload is a JSON
-map from label name to expected value — the same shape used in the
+map from label name to expected value, the same shape used in the
 YAML rule `match` field.
 
 | Method | Path                  | Notes                                                   |
@@ -326,7 +332,7 @@ should measure it at the reverse proxy in front of alertchain.
 
 ### Authentication
 
-All HTTP endpoints — including the bundled UI at `/ui/` — are
+All HTTP endpoints, including the bundled UI at `/ui/`, are
 unauthenticated, matching the equivalent Alertmanager endpoints.
 Put a reverse proxy (nginx, Caddy, an authenticating sidecar, etc.)
 in front of alertchain for access control. This is the same
@@ -353,9 +359,9 @@ mutes page) the firing alerts currently matching each mute.
 | `POST /ui/mutes/{id}/expire`  | Expire one mute.                                              |
 | `GET /ui/static/...`          | Embedded static assets (htmx, CSS, JS).                       |
 
-The UI calls the same lifecycle functions as the HTTP API — both
+The UI calls the same lifecycle functions as the HTTP API, both
 the mute side (`CreateMute` / `ListMutes` / `GetMute`) and the alert
-side (`ListAlerts` / `MatchingAlerts`) — so validation, status
+side (`ListAlerts` / `MatchingAlerts`), so validation, status
 computation, and audit fields stay identical between the two
 surfaces.
 
@@ -373,7 +379,7 @@ resolved them, so suppression is no longer relevant).
 
 alertchain stores only the fields it needs for routing: labels,
 timing, and observation timestamps. Annotations and `generatorURL`
-are not persisted — they pass through into the webhook payload and
+are not persisted; they pass through into the webhook payload and
 belong on the downstream destination's surface (Slack, PagerDuty,
 etc.), not in alertchain's UI. See
 [DESIGN.md -> Observed alerts](DESIGN.md#observed-alerts) for the
@@ -395,7 +401,7 @@ unaffected.
 
 The UI form's `created_by` field is required. The configured header
 (default `X-Auth-User`) is consulted as a *hint* to prefill the
-field from upstream-set identity. This is **not** authentication —
+field from upstream-set identity. This is **not** authentication:
 the UI trusts whatever the reverse proxy sets, and the HTTP API
 ignores this header entirely. If the form value is non-empty it
 wins over the header; if both are empty after `strings.TrimSpace`
@@ -409,13 +415,13 @@ disable header lookup entirely, set `ui.user_header: ""`.
 
 PostgreSQL is the only supported backend. SQLite and other embedded
 databases are intentionally unsupported, and so is in-process
-clustering — both are delegated to the database layer. See
+clustering. Both are delegated to the database layer. See
 [Database setup](#database-setup) for schema management; the schema
 itself lives in `migrations/`.
 
 alertchain does not garbage-collect historical data. Retention of
 observed alerts and notification history is the operator's
-responsibility — a periodic `DELETE` job, partitioning, or whatever
+responsibility: a periodic `DELETE` job, partitioning, or whatever
 fits the deployment.
 
 ## Routing verification
@@ -464,8 +470,8 @@ verify:
     labels:
       alertname: SomethingUnknown
     expect:
-      rules: [catch-all-discard]
-      receivers: [discard]
+      rules: [catch-all]
+      receivers: [log-sink]
 ```
 
 The comparison is order-independent for both `rules` and

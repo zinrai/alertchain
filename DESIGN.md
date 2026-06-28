@@ -1,4 +1,4 @@
-# alertchain — Design
+# alertchain Design
 
 This document describes why `alertchain` is built the way it is. It is
 intended for people who want to understand or modify the project. The
@@ -9,21 +9,21 @@ reasoning behind that surface.
 
 Alertmanager's repeating-notification model did not fit our use
 case. To compensate, we built tools whose only purpose was to
-suppress those repetitions — auto-silence scripts, ChatOps bots,
-schedulers, watchers — and ended up maintaining four or more such
+suppress those repetitions (auto-silence scripts, ChatOps bots,
+schedulers, watchers), and ended up maintaining four or more such
 components. They existed because Alertmanager keeps re-firing the
 same alert as long as the condition holds, not because they
 addressed an operational need on their own.
 
-Alertmanager's other features — inheritance in the routing tree,
-inhibit rules, group/repeat/throttle timers — were also unnecessary
+Alertmanager's other features (inheritance in the routing tree,
+inhibit rules, group/repeat/throttle timers) were also unnecessary
 for our use case, and the configuration cost they imposed was high.
 Predicting what would happen to a given alert required holding the
 whole routing tree plus several internal timers in mind.
 
 `alertchain` is a deliberate reimplementation of the notification
 routing subsystem with different tradeoffs: a flat ordered rule
-list, no timers, and — critically — one firing notification and one
+list, no timers, and, critically, one firing notification and one
 resolved notification per occurrence. The state machine
 (`firing-sent` / `firing-failed` / `resolved-sent` /
 `resolved-failed`) is described under Notification semantics. This
@@ -83,8 +83,8 @@ checked against them.
    matching Alertmanager's algorithm byte-for-byte; a webhook
    receiver that deduplicates Alertmanager-sourced alerts by
    fingerprint will deduplicate alertchain-sourced alerts
-   identically. Other Alertmanager API endpoints — silences, alert
-   groups, status, receivers — are deliberately not implemented.
+   identically. Other Alertmanager API endpoints (silences, alert
+   groups, status, receivers) are deliberately not implemented.
    The mute API is alertchain's own (`/api/v1/mutes`) and is not a
    silence subset.
 
@@ -94,8 +94,9 @@ These are intentional exclusions. Each one is a thing alertchain
 could reasonably do, but does not, because the cost of doing it
 outweighs the value.
 
-- **Inhibit rules.** Use Prometheus `unless` operator, or route the
-  alert to the built-in `discard` receiver.
+- **Inhibit rules.** Use the Prometheus `unless` operator, or route
+  the alert to a low-priority receiver (for example a sink that only
+  logs what it receives) rather than suppressing it inside the router.
 - **Routing tree with inheritance.** Rules are a flat ordered list.
 - **A `defaults` block in the config.** There is no per-rule timer
   to default; every rule is fully self-contained.
@@ -149,8 +150,9 @@ match:
 ```
 
 Conditions that an expressive matcher language would express in one
-line — "severity is anything but critical", "alertname starts with
-Disk", "team is one of A, B, C" — are expressed by writing multiple
+line (for example "severity is anything but critical", "alertname
+starts with Disk", "team is one of A, B, C") are expressed by writing
+multiple
 rules in the order that produces the desired routing. This is the
 same approach iptables uses: each rule line is an equality condition,
 and complex policies emerge from the sequence rather than from
@@ -172,9 +174,9 @@ rule are a hidden cost:
   operator precedence misread? Equality has none of these.
 
 By restricting matchers to equality, alertchain enforces the
-"sequence of equality rules" style. The expressiveness lost — one
-rule cannot express "severity is anything but critical" on its own
-— is recovered by splitting that intent across rules and relying on
+"sequence of equality rules" style. The expressiveness lost (one
+rule cannot express "severity is anything but critical" on its own)
+is recovered by splitting that intent across rules and relying on
 first-match semantics. The gain is that every rule reads as a list
 of equalities, which makes invariant 1 ("rule evaluation is local")
 strong on the reader's side as well as on the evaluator's.
@@ -198,10 +200,10 @@ without alertchain having to implement queues or backoff itself.
 Per `(rule, fingerprint)` pair, the `notifications` table records
 the status of the most recent attempt as one of four values:
 
-- `firing-sent` — the firing alert was delivered successfully
-- `firing-failed` — the firing alert was attempted but failed
-- `resolved-sent` — the resolved alert was delivered successfully
-- `resolved-failed` — the resolved alert was attempted but failed
+- `firing-sent`: the firing alert was delivered successfully
+- `firing-failed`: the firing alert was attempted but failed
+- `resolved-sent`: the resolved alert was delivered successfully
+- `resolved-failed`: the resolved alert was attempted but failed
 
 Whether an incoming alert is "firing" or "resolved" is determined
 the same way Alertmanager determines it: `endsAt` at or before now
@@ -329,8 +331,8 @@ without translation. Two layers:
 2. **Behavioral semantics for the alert lifecycle** (manually
    mirrored, not imported): firing-vs-resolved determination uses
    `endsAt <= now`, matching Alertmanager's behavior. Prometheus
-   sets `endsAt` explicitly — a future timeout while firing, a past
-   `ResolvedAt` once resolved — and alertchain consumes that signal
+   sets `endsAt` explicitly (a future timeout while firing, a past
+   `ResolvedAt` once resolved), and alertchain consumes that signal
    without computing a resolve_timeout of its own.
 
 3. **Fingerprint algorithm.** `Alert.Fingerprint()` delegates to
@@ -342,8 +344,8 @@ without translation. Two layers:
 
 ### Operator side: deliberately not compatible
 
-Operator-facing endpoints — silences, alert groups, status,
-receivers — are not implemented. The mute API at `/api/v1/mutes`
+Operator-facing endpoints (silences, alert groups, status,
+receivers) are not implemented. The mute API at `/api/v1/mutes`
 is alertchain's own:
 
 - Different URL namespace (`/api/v1/mutes` vs the Alertmanager
@@ -361,8 +363,8 @@ tooling that grows around the repeating-notification model (see
 Motivation). Re-implementing that surface in alertchain would
 preserve compatibility with tools whose existence alertchain is
 trying to make unnecessary. Operators who need a CLI for mute
-management can build a client against the alertchain API —
-the schema is one struct, two endpoints, and a `map[string]string`
+management can build a client against the alertchain API: the
+schema is one struct, two endpoints, and a `map[string]string`
 of matchers.
 
 The Alertmanager silence package (`silence/`, `silence/silencepb/`)
@@ -427,7 +429,7 @@ scheduler is both more visible and more flexible.
 Persistence is exposed through package-level lifecycle functions in
 `alert_store.go` (`UpsertAlert`, `ListAlerts`, `GetAlert`,
 `MatchingAlerts`) that wrap an `AlertStore` interface. Presentation
-layers — currently the UI; tomorrow possibly an HTTP endpoint —
+layers (currently the UI, tomorrow possibly an HTTP endpoint)
 call these instead of touching the store directly. This mirrors the
 mute lifecycle pattern (`CreateMute` / `ListMutes` / `GetMute`) so
 that adding a new presentation layer is a uniform exercise: wire
@@ -457,19 +459,19 @@ release artefact remains a single Go executable.
 
 The UI has two pages:
 
-- `GET /ui/` — observed alerts. Tabs: firing (default) and expired.
+- `GET /ui/` shows observed alerts. Tabs: firing (default) and expired.
   The firing tab additionally excludes alerts matched by any
   currently active mute, so the page shows only what needs an
   operator's attention. Muted alerts remain visible on the mutes
   page (next bullet), under their mute.
-- `GET /ui/mutes/` — mutes. Default lists present mutes (active +
+- `GET /ui/mutes/` shows mutes. Default lists present mutes (active +
   pending); `?status=expired` shows the historical set. For each
   present mute, the page inlines the firing alerts whose labels
   currently match (JSONB containment, bounded by the GIN index on
   `alerts.labels`).
 
-Both pages inline everything an operator needs to act on —
-matchers, audit fields, currently-matching alerts — keeping the
+Both pages inline everything an operator needs to act on
+(matchers, audit fields, currently-matching alerts), keeping the
 navigation surface to two URLs plus the new-mute form.
 
 The `/ui/mutes/` page issues one match query per present mute (N+1).
@@ -480,7 +482,7 @@ mute count is operational, not enforced.
 ### One layer of mute logic
 
 The UI handlers and the HTTP API handlers call the same lifecycle
-functions — `CreateMute`, `ListMutes`, `GetMute` — from `mute.go`.
+functions (`CreateMute`, `ListMutes`, `GetMute`) from `mute.go`.
 Validation, time normalisation, ID generation, and status
 computation live in one place. Both presentation surfaces are
 formatters; neither owns business rules. The alert side has the
@@ -517,7 +519,7 @@ routes. The HTTP API at `/api/v1/mutes` is unaffected.
 The UI does **not** authenticate. The configured header
 (`user_header`) is read as a *hint* to prefill the "Created by"
 field; alertchain trusts whatever the upstream reverse proxy sets.
-The HTTP API ignores this header entirely — API callers (automation)
+The HTTP API ignores this header entirely; API callers (automation)
 are expected to set `created_by` in the JSON body directly.
 
 The user's explicit form value, when non-empty, takes precedence

@@ -106,18 +106,6 @@ func TestWebhookFingerprintStableAcrossInstances(t *testing.T) {
 	}
 }
 
-// TestNotifyDiscardIsNoop verifies that the built-in discard type
-// short-circuits to no-op even if Notify is invoked directly (defense
-// in depth; the chain Process also short-circuits earlier).
-func TestNotifyDiscardIsNoop(t *testing.T) {
-	notifier := NewHTTPNotifier()
-	recv := &Receiver{Name: "discard", Type: "discard"}
-	alert := &Alert{Labels: map[string]string{"alertname": "X"}}
-	if err := notifier.Notify(context.Background(), recv, alert); err != nil {
-		t.Errorf("discard Notify should not error, got %v", err)
-	}
-}
-
 // TestNotifyContextDeadline verifies that the context deadline supplied
 // by the caller actually bounds the request. The handler sleeps longer
 // than the context allows; Notify must return before the handler
