@@ -6,7 +6,7 @@ require (
 	github.com/go-openapi/strfmt v0.26.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/prometheus/alertmanager v0.33.0
-	github.com/prometheus/common v0.68.1
+	github.com/prometheus/common v0.69.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
