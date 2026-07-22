@@ -11,7 +11,7 @@ import (
 	"os"
 	"sort"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // verifyFile is the top-level YAML structure.
