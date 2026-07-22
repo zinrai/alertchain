@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/go-openapi/strfmt v0.26.4
 	github.com/jackc/pgx/v5 v5.10.0
-	github.com/prometheus/alertmanager v0.33.0
+	github.com/prometheus/alertmanager v0.33.1
 	github.com/prometheus/common v0.70.0
 	gopkg.in/yaml.v3 v3.0.1
 )
