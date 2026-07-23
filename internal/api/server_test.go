@@ -81,7 +81,7 @@ func newServerHarness(t *testing.T, receivers map[string]*alertchain.Receiver, r
 		t.Skip("DATABASE_URL not set; skipping DB-backed test")
 	}
 
-	db, err := store.OpenStore(context.Background(), dsn)
+	db, err := store.OpenStore(context.Background(), dsn, 25)
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)
 	}

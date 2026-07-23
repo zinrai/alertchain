@@ -98,13 +98,18 @@ func parseConfigFlag(args []string, sub string) (string, []string, error) {
 func cmdServe(args []string) error {
 	fs := newFlagSet("serve")
 	var (
-		config string
-		listen string
+		config       string
+		listen       string
+		maxOpenConns int
 	)
 	fs.StringVar(&config, "config", "alertchain.yaml", "path to config file")
 	fs.StringVar(&listen, "listen", ":9093", "HTTP listen address")
+	fs.IntVar(&maxOpenConns, "db-max-open-conns", 25, "maximum open database connections (keep instances x this value under PostgreSQL max_connections)")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if maxOpenConns <= 0 {
+		return fmt.Errorf("-db-max-open-conns must be a positive integer, got %d", maxOpenConns)
 	}
 
 	dsn := os.Getenv("DATABASE_URL")
@@ -119,7 +124,7 @@ func cmdServe(args []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 	chain := cfg.Chain
-	db, err := openStoreWithTimeout(dsn)
+	db, err := openStoreWithTimeout(dsn, maxOpenConns)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
@@ -253,8 +258,8 @@ func cmdVerify(args []string) error {
 }
 
 // openStoreWithTimeout wraps store.OpenStore with a startup-time deadline.
-func openStoreWithTimeout(dsn string) (*store.Store, error) {
+func openStoreWithTimeout(dsn string, maxOpenConns int) (*store.Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return store.OpenStore(ctx, dsn)
+	return store.OpenStore(ctx, dsn, maxOpenConns)
 }

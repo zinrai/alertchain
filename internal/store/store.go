@@ -31,11 +31,17 @@ type Store struct {
 // A sanity check verifies the expected tables are present so a
 // misconfigured deployment fails at startup rather than at the first
 // runtime query.
-func OpenStore(ctx context.Context, dsn string) (*Store, error) {
+//
+// maxOpenConns bounds the connection pool so concurrent alert
+// processing cannot exhaust PostgreSQL's max_connections.
+func OpenStore(ctx context.Context, dsn string, maxOpenConns int) (*Store, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres: %w", err)
 	}
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
