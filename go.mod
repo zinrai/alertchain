@@ -3,7 +3,7 @@ module github.com/zinrai/alertchain
 go 1.26.3
 
 require (
-	github.com/go-openapi/strfmt v0.27.2
+	github.com/go-openapi/strfmt v0.27.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prometheus/alertmanager v0.34.1
 	github.com/prometheus/common v0.71.0
@@ -12,7 +12,7 @@ require (
 
 require (
 	github.com/go-openapi/analysis v0.25.5 // indirect
-	github.com/go-openapi/errors v0.22.8 // indirect
+	github.com/go-openapi/errors v0.22.9 // indirect
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-openapi/jsonreference v1.0.0 // indirect
 	github.com/go-openapi/loads v0.25.0 // indirect
@@ -37,8 +37,8 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
