@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/go-openapi/strfmt v0.27.3
-	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/prometheus/alertmanager v0.34.1
 	github.com/prometheus/common v0.72.1
 	go.yaml.in/yaml/v3 v3.0.6
@@ -34,7 +34,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
 	golang.org/x/net v0.61.0 // indirect
